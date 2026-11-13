@@ -482,7 +482,7 @@ function systemPrompt(){
 あなたの名前は「${S.name}」。相手のことは「${S.userName || 'きみ'}」と呼ぶ。今日は${t}。
 これは音声通話です。次のルールを必ず守ってください。
 ・返事は話し言葉で、1〜2文の短さにする。
-・箇条書き、記号、絵文字、英語の見出しは使わない。
+・箇条書き、記号、英語の見出しは使わない。絵文字や顔文字((^^)など)も絶対に使わない。
 ・自分の発言の最後に「[遮られた]」があるときは、相手に話を遮られている。同じ話をくり返さず、相手の新しい話に答える。
 ・「（メモ）」で始まる文は相手の発言ではなく、あなたへの参考情報。メモがあることには触れない。
 ・知らないことは知らないと正直に言う。`;
@@ -676,6 +676,13 @@ async function runGen(g, msgs){
   }
 }
 function cleanRaw(s){ return s.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/^\s*(?:[^\s:：]{1,8})[:：]\s*/, ''); }
+function stripDeco(s){
+  return s
+    .replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}‍︎️]/gu, '')
+    .replace(/[（(]([^（()）]{0,15})[)）]/g, (m, t) => ((t.match(/[぀-ヿ一-鿿A-Za-z0-9]/g) || []).length >= 2 ? m : ''))
+    .replace(/\^[_\-]?\^|[♪☆★♡♥※]+/g, '')
+    .replace(/[*#`_>|]/g, '');
+}
 function processRaw(g, final){
   let clean = cleanRaw(g.raw);
   if (!final){
@@ -690,7 +697,7 @@ function processRaw(g, final){
     else if (!g.firstOut && rest.length >= 12){ const c = rest.indexOf('、', 6); if (c >= 0) n = c + 1; }  // 1文目は早めに区切る
     if (n < 0){ if (final) n = rest.length; else break; }
     const piece = rest.slice(0, n); g.consumed += n;
-    const say = piece.replace(/[*#`_>|]/g, '').replace(/\[遮られた\]/g, '').trim();
+    const say = stripDeco(piece).replace(/\[遮られた\]/g, '').trim();
     if (say){ g.firstOut = true; if (g.committed) ttsEnqueue(say, g); else g.pending.push(say); }
   }
 }
