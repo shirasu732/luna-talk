@@ -468,6 +468,9 @@ body.l2d #char{display:none}
     <input id="s_name" type="text" maxlength="16">
     <label>あなたの呼ばれ方(空欄なら「きみ」)</label>
     <input id="s_userName" type="text" maxlength="16">
+    <label>住んでいる地域(天気用)</label>
+    <input id="s_homeCity" type="text" maxlength="20" placeholder="例:船橋市">
+    <div class="hint">場所を言わずに「今日の天気は？」と聞いたときに使います。空なら端末の位置情報を使います。</div>
     <label>キャラ設定(性格・口調)</label>
     <textarea id="s_persona"></textarea>
     <label>キャラの見た目</label>
@@ -602,7 +605,7 @@ const DEFAULTS = {
   name: 'Luna', persona: DEFAULT_PERSONA, voiceURI: '',
   rate: 1.1, pitch: 1.35, endMs: 650, sens: 2.8, barge: 2.6,
   aiEngine: 'auto', ollamaModel: 'gemma3:1b', smartModel: 'gemma3:4b', ollamaUrl: 'http://localhost:11434',
-  voiceEngine: 'clover', cloverPitch: 0, claudeKey: '', claudeModel: 'claude-sonnet-5-5', claudeChatModel: 'claude-haiku-5-5', asEngine: 'auto', avatar: 'svg', l2dScale: 1.7, l2dY: 0, aizuchi: true, speculative: true, localStt: false, search: true
+  voiceEngine: 'clover', cloverPitch: 0, homeCity: '', claudeKey: '', claudeModel: 'claude-sonnet-5-5', claudeChatModel: 'claude-haiku-5-5', asEngine: 'auto', avatar: 'svg', l2dScale: 1.7, l2dY: 0, aizuchi: true, speculative: true, localStt: false, search: true
 };
 const STORE_KEY = 'hiyori-local-settings';
 const HIST_KEY = 'hiyori-local-history';
@@ -1366,6 +1369,7 @@ async function handOffToAssist(text){
 function commitUser(text){
   pushHistory('user', text); addMsg('user', text); clearRec(false);
   if (detectTask(text)){ handOffToAssist(text); return; }
+  if (S.search && liveAnswer(text)) return;
   const q = S.search ? detectQuery(text) : null;
   if (q){
     // 調べものが必要 → 推測で答えさせず、先に「調べるね」と言ってから結果つきで返事を作る
@@ -1824,6 +1828,72 @@ function asAddImage(file){
   img.src = u;
 }
 
+/* ---- いまの情報を調べてから答える(天気・日時・最新の話題) ---- */
+const WMO = {0:'快晴',1:'晴れ',2:'晴れ時々くもり',3:'くもり',45:'霧',48:'霧',51:'弱い霧雨',53:'霧雨',55:'強い霧雨',56:'着氷性の霧雨',57:'着氷性の霧雨',61:'小雨',63:'雨',65:'大雨',66:'凍える雨',67:'凍える雨',71:'小雪',73:'雪',75:'大雪',77:'霧雪',80:'にわか雨',81:'にわか雨',82:'激しいにわか雨',85:'にわか雪',86:'激しいにわか雪',95:'雷雨',96:'ひょうを伴う雷雨',99:'ひょうを伴う雷雨'};
+const WEATHER_RE = /(天気|気温|てんき|雨|晴れ|雪|傘|かさ持|暑い|寒い|降る|降水)/;
+function isWeatherQ(t){ return WEATHER_RE.test(t) && /(今日|きょう|明日|あした|明後日|あさって|今|いま|週|天気|気温|降る|傘|何度)/.test(t); }
+function weatherDay(t){ return /明後日|あさって/.test(t) ? 2 : /明日|あした/.test(t) ? 1 : 0; }
+function weatherPlace(t){
+  const m = t.replace(/[、。？?！!]/g, ' ').match(/([^\s、。]{2,12}?)(?:の|って|は)?(?:今日の|明日の|明後日の|あしたの|きょうの)?(?:天気|気温|てんき)/);
+  let p = m ? m[1] : '';
+  if (!p){ const m2 = t.match(/^([^\s、。]{2,8}?)(?:って|は|の)(?:今日|明日|明後日|あした|きょう|あさって)/); if (m2) p = m2[1]; }
+  p = p.replace(/^(今日|明日|明後日|あした|きょう|あさって|今|いま)(の)?/, '').replace(/(の|って|は)$/, '');
+  if (/^(今日|明日|明後日|あした|きょう|あさって|今|いま|ここ|こっち|うち|外|そと)$/.test(p)) p = '';
+  return p;
+}
+async function geocode(name){
+  const j = await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=1&language=ja&name=${encodeURIComponent(name)}`).then(r => r.json());
+  const g = j.results && j.results[0];
+  return g ? { lat: g.latitude, lon: g.longitude, name: g.name + (g.admin1 && g.admin1 !== g.name ? '(' + g.admin1 + ')' : '') } : null;
+}
+function myPosition(){
+  return new Promise(ok => {
+    if (!navigator.geolocation) return ok(null);
+    navigator.geolocation.getCurrentPosition(p => ok({ lat: p.coords.latitude, lon: p.coords.longitude, name: '今いる場所' }), () => ok(null), { timeout: 8000, maximumAge: 3600e3 });
+  });
+}
+async function getWeather(text){
+  const place = weatherPlace(text);
+  let loc = place ? await geocode(place) : null;
+  if (!loc && !place && S.homeCity) loc = await geocode(S.homeCity);
+  if (!loc && !place) loc = await myPosition();
+  if (!loc) return { error: place ? `「${place}」という場所が見つからなかった` : '場所がわからなかった(⚙設定で住んでいる地域を入れてね)' };
+  const w = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=3`).then(r => r.json());
+  const d = weatherDay(text), names = ['今日', '明日', '明後日'], D = w.daily;
+  let s = `${loc.name}の${names[d]}の天気:${WMO[D.weather_code[d]] || '不明'}、最高${Math.round(D.temperature_2m_max[d])}度、最低${Math.round(D.temperature_2m_min[d])}度、降水確率${D.precipitation_probability_max[d] ?? '?'}%。`;
+  if (d === 0 && w.current) s += `いまは${WMO[w.current.weather_code] || ''}で${Math.round(w.current.temperature_2m)}度。`;
+  return { text: s, src: { title: 'Open-Meteo 天気予報(' + loc.name + ')', url: 'https://open-meteo.com/' } };
+}
+function nowText(){
+  const d = new Date(), w = '日月火水木金土'[d.getDay()];
+  return `今は${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日(${w}曜日)${d.getHours()}時${d.getMinutes()}分。`;
+}
+const TIME_RE = /(何時|なんじ|何日|なんにち|何曜|なんよう|今日は何|日付|今年は何年|何年何月)/;
+const NEWS_RE = /(ニュース|最新|最近の|今話題|速報|株価|為替|ドル円|円相場|試合結果|スコア|順位|発売日|新作|選挙)/;
+// 会話中:調べてから答える。返り値 true なら処理した
+function liveAnswer(text){
+  const t = text.replace(/\s/g, '');
+  if (TIME_RE.test(t) && !WEATHER_RE.test(t)){
+    if (gen) abortGen(gen);
+    startGen(null, true, `（メモ）${nowText()} これをもとに、話し言葉で短く答えて。`);
+    return true;
+  }
+  if (isWeatherQ(t)){
+    if (gen) abortGen(gen);
+    const holder = { id: ++genSeq, spoken:[], el:null };
+    ttsEnqueue(['天気、見てみるね。','ちょっと天気調べるね。'][Math.floor(Math.random()*2)], holder);
+    setState('thinking');
+    const note = addNote('🌤 天気を調べています…', 'search');
+    getWeather(t).then(r => {
+      note.textContent = r.error ? '⚠️ ' + r.error : '🌤 ' + r.text;
+      pendingResults.push({ memo: r.error ? `（メモ）天気を調べようとしたけど、${r.error}。そう伝えて。` : `（メモ）調べた天気:${r.text} これをもとに、話し言葉で1〜2文で伝えて。傘や服装のひとことがあると良い。` });
+    }).catch(e => { note.textContent = '⚠️ 天気を調べられなかった'; pendingResults.push({ memo: '（メモ）天気を調べられなかった。ネットにつながっているか確認してと伝えて。' }); });
+    return true;
+  }
+  if (NEWS_RE.test(t) && t.length >= 5){ handOffToAssist(text + '(最新の情報を調べて、要点を短く)'); return true; }
+  return false;
+}
+
 /* ---- Claude(Anthropic API・APIキーが必要・使った分だけ有料) ---- */
 const CLAUDE_MODELS = { 'claude-haiku-5-5': 'Claude Haiku(速い・安い)', 'claude-sonnet-5-5': 'Claude Sonnet(おすすめ)', 'claude-opus-5-5': 'Claude Opus(いちばんかしこい・高い)' };
 function claudeReady(){ return !!(S.claudeKey && S.claudeKey.trim()); }
@@ -1941,7 +2011,7 @@ function sourcesPrompt(q, src){
     src.map((s, i) => `【資料${i + 1}】${s.title}\n${s.text}`).join('\n\n') + '\n\n【質問】' + q;
 }
 function asSystem(){
-  return `あなたは${S.name}。ユーザーのための、かしこくて親切な日本語アシスタント。
+  return `あなたは${S.name}。ユーザーのための、かしこくて親切な日本語アシスタント。${nowText()}
 - まず質問の種類を見きわめ、それに合った形で答える:事実の質問→最初に結論を一言で、そのあと必要なだけ補足。やり方の質問→番号つきの手順。比較→表。相談や悩み→相手の状況に寄りそって具体的な提案。雑談→短く自然に。
 - 頼まれたもの(文章・メール・コード・企画など)は、そのまま使える完成した形で作る。コードは動く完全なものをコードブロックで。
 - 長さは質問に合わせる。簡単な質問に長々と答えない。
@@ -2060,6 +2130,14 @@ async function asGenerate(){
     await loadMd();
     const um = chat.msgs[chat.msgs.length - 2];
     const pick = await asPickEngine();
+    if (um && um.role === 'user' && isWeatherQ(um.content.replace(/\s/g, ''))){
+      el.innerHTML = '<div class="hint">🌤 天気を調べています…</div>';
+      const w = await getWeather(um.content.replace(/\s/g, '')).catch(() => ({ error: '天気を取得できなかった' }));
+      um.aug = w.error ? um.content + `\n\n(天気を調べようとしたが${w.error}。)` : `【調べた天気】${w.text}\n\n【質問】${um.content}\n上の天気データをもとに答えて。`;
+      if (w.src) out.sources = [w.src];
+      um.research = false;
+    }
+    if (um && um.role === 'user' && NEWS_RE.test(um.content) && (S.asWeb || 'auto') !== 'off') um.research = true;
     const web = pick.kind === 'claude' && um && um.research;
     if (web) el.innerHTML = '<div class="hint">🔎 webで調べています…</div><span class="typing"><i></i><i></i><i></i></span>';
     if (!web && um && um.role === 'user' && um.research){
@@ -2209,7 +2287,7 @@ function sendText(){
 }
 
 /* ============ 設定画面 ============ */
-const FIELDS = ['aiEngine','claudeKey','claudeModel','claudeChatModel','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','persona','voiceURI','cloverPitch','avatar','l2dScale','l2dY','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
+const FIELDS = ['aiEngine','claudeKey','claudeModel','claudeChatModel','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','homeCity','persona','voiceURI','cloverPitch','avatar','l2dScale','l2dY','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
 function openSettings(){
   for (const k of FIELDS){
     const el = $('#s_' + k); if (!el) continue;
