@@ -354,7 +354,18 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
 <div id="settings" class="modal">
   <div class="panel">
     <h2>設定</h2>
-    <label>AIモデル(スマホの中で動きます)</label>
+    <label>AIを動かす場所</label>
+    <select id="s_aiEngine">
+      <option value="auto">おまかせ(PCでOllamaが動いていればそれを使う)</option>
+      <option value="ollama">PCのOllama</option>
+      <option value="browser">ブラウザの中(スマホ用)</option>
+    </select>
+    <label>Ollamaのモデル名</label>
+    <input id="s_ollamaModel" type="text">
+    <div class="hint">gemma3:1b(速い) / gemma3:4b(かしこい・少し遅い)。PowerShellで ollama pull モデル名 を実行して入れてね。</div>
+    <label>OllamaのURL</label>
+    <input id="s_ollamaUrl" type="text">
+    <label>ブラウザの中で動かすAIモデル</label>
     <select id="s_model">
       <option value="auto">おまかせ(端末に合わせて自動で選ぶ)</option>
       <option value="gemma3-1b-it">かるい:Gemma 3 1B(約0.7GB・ふつうのスマホ向け)</option>
@@ -409,6 +420,7 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
       <span>見つかったマイク</span><b id="mc_count" class="mcv">-</b>
       <span>音声認識</span><b id="mc_sr" class="mcv">-</b>
       <span>AI(WebGPU)</span><b id="mc_gpu" class="mcv">-</b>
+      <span>PCのAI(Ollama)</span><b id="mc_oll" class="mcv">-</b>
     </div>
     <label>使うマイク</label>
     <select id="mc_dev"></select>
@@ -440,6 +452,7 @@ const DEFAULTS = {
   model: 'auto', userName: '', setupDone: false,
   name: 'Luna', persona: DEFAULT_PERSONA, voiceURI: '',
   rate: 1.1, pitch: 1.35, endMs: 650, sens: 2.8, barge: 2.6,
+  aiEngine: 'auto', ollamaModel: 'gemma3:1b', ollamaUrl: 'http://localhost:11434',
   voiceEngine: 'neural', aizuchi: true, speculative: true, localStt: false, search: true
 };
 const STORE_KEY = 'hiyori-local-settings';
@@ -599,7 +612,53 @@ async function ensureEngine(){
   finally { engineLoading = null; showLoad(false); }
 }
 
-/* ============ 調べもの(Wikipedia・キー不要) ============ */
+/* ============ PCのAI(Ollama・無料・回数制限なし) ============ */
+let ollamaOK = null;   // null=まだ調べていない
+async function detectOllama(quiet){
+  if (S.aiEngine === 'browser'){ ollamaOK = false; return false; }
+  try {
+    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 1500);
+    const r = await fetch(S.ollamaUrl.replace(/\/$/, '') + '/api/tags', { signal: ctl.signal });
+    clearTimeout(tm);
+    const names = ((await r.json()).models || []).map(m => m.name);
+    const want = S.ollamaModel.includes(':') ? S.ollamaModel : S.ollamaModel + ':latest';
+    ollamaOK = names.includes(want) || names.includes(S.ollamaModel);
+    if (!ollamaOK && !quiet) toast(`Ollamaに「${S.ollamaModel}」が入っていないよ。PowerShellで ollama pull ${S.ollamaModel} を実行してね`);
+  } catch(e){
+    ollamaOK = false;
+    if (S.aiEngine === 'ollama' && !quiet) toast('Ollamaにつながりませんでした。Ollamaが起動しているか、OLLAMA_ORIGINS の設定を確認してね');
+  }
+  return ollamaOK;
+}
+function warmOllama(){
+  return fetch(S.ollamaUrl.replace(/\/$/, '') + '/api/chat', { method: 'POST',
+    body: JSON.stringify({ model: S.ollamaModel, messages: [], keep_alive: '30m' }) }).catch(() => {});
+}
+async function* ollamaStream(msgs, g){
+  const ctl = new AbortController(); g.abortCtl = ctl;
+  const res = await fetch(S.ollamaUrl.replace(/\/$/, '') + '/api/chat', { method: 'POST', signal: ctl.signal,
+    body: JSON.stringify({ model: S.ollamaModel, messages: msgs, stream: true, keep_alive: '30m',
+      options: { num_predict: 60, temperature: 0.7 } }) });
+  if (!res.ok) throw new Error('Ollama ' + res.status);
+  const rd = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+  for (;;){
+    const { value, done } = await rd.read(); if (done) return;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0){
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      if (!line) continue;
+      const j = JSON.parse(line);
+      if (j.error) throw new Error(j.error);
+      const c = j.message && j.message.content;
+      if (c) yield { choices: [{ delta: { content: c } }] };
+      if (j.done) return;
+    }
+  }
+}
+
+/* ============ 調べもの
+(Wikipedia・キー不要) ============ */
 function detectQuery(text){
   const t = text.replace(/[。、！？!?\s]/g, '');
   let m = t.match(/^(?:ねえ|ねぇ|あの|えっと)?(.{2,24}?)(?:って|とは|ってのは|っていうのは)(?:何|なに|なん|誰|だれ|どこ|どんな)/);
@@ -760,11 +819,12 @@ function startGen(userText, committed, memo){
 async function runGen(g, msgs){
   if (g.cancelled) return;
   try {
-    const eng = await ensureEngine();
+    if (ollamaOK === null) await detectOllama(true);
+    const eng = ollamaOK ? null : await ensureEngine();
     if (g.cancelled) return;
     const req = { messages: msgs, stream: true, max_tokens: 50, temperature: 0.7, top_p: 0.9, frequency_penalty: 0.3 };
     if (/^Qwen/.test(engineModel)) req.extra_body = { enable_thinking: false };
-    const chunks = await eng.chat.completions.create(req);
+    const chunks = ollamaOK ? ollamaStream(msgs, g) : await eng.chat.completions.create(req);
     const it = chunks[Symbol.asyncIterator]();
     const stop = new Promise(res => { g.stop = res; });
     for (;;){
@@ -859,6 +919,7 @@ function commitUser(text){
 function abortGen(g){
   g.cancelled = true;
   if (g.stop) g.stop({ done: true });
+  if (g.abortCtl){ try { g.abortCtl.abort(); } catch(e){} }
   try { engine && engine.interruptGenerate(); } catch(e){}
   if (gen === g) gen = null;
 }
@@ -1075,6 +1136,7 @@ async function mcStatus(){
   const gum = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   mcSet('gum', gum, gum ? '対応' : '未対応');
   mcSet('sr', !!SR, SR ? '対応' : '未対応(ChromeかEdgeを使ってね)');
+  detectOllama(true).then(ok => mcSet('oll', ok ? true : null, ok ? '使える(' + S.ollamaModel + ')' : '見つからない'));
   mcSet('gpu', !!navigator.gpu, navigator.gpu ? '対応' : '未対応');
   try {
     const st = await navigator.permissions.query({ name: 'microphone' });
@@ -1163,7 +1225,8 @@ async function startCall(){
   } catch(e){
     analyser = null; mediaStream = null; toast(micErrorText(e));
   }
-  try { await Promise.all([ensureEngine(), S.voiceEngine !== 'device' ? ensurePiper().catch(() => {}) : null]); }
+  await detectOllama();
+  try { await Promise.all([ollamaOK ? warmOllama() : ensureEngine(), S.voiceEngine !== 'device' ? ensurePiper().catch(() => {}) : null]); }
   catch(e){ toast('AIを起動できませんでした: ' + (e.message || e)); stopCall(); return; }
   if (!running) return;
   await prepareLocalStt();
@@ -1198,7 +1261,7 @@ function sendText(){
 }
 
 /* ============ 設定画面 ============ */
-const FIELDS = ['voiceEngine','model','name','userName','persona','voiceURI','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
+const FIELDS = ['aiEngine','ollamaModel','ollamaUrl','voiceEngine','model','name','userName','persona','voiceURI','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
 function openSettings(){
   for (const k of FIELDS){
     const el = $('#s_' + k); if (!el) continue;
@@ -1216,6 +1279,7 @@ function saveFromForm(){
   }
   if (!S.name) S.name = DEFAULTS.name;
   if (!S.persona.trim()) S.persona = DEFAULT_PERSONA;
+  ollamaOK = null;
   saveSettings(); applyName();
   $('#settings').classList.remove('open'); toast('保存したよ');
 }
