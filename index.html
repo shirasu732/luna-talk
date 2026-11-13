@@ -156,6 +156,14 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
 .panel .btns button,.bigbtn{flex:1;padding:13px;border-radius:16px;border:none;font-size:16px;font-weight:700}
 #saveBtn,.bigbtn{background:linear-gradient(135deg,#ff8fb6,#b9a6f5);color:#fff}
 #closeBtn{background:#f1eaff;color:var(--ink)}
+.mcgrid{display:grid;grid-template-columns:1fr auto;gap:6px 12px;font-size:14px;margin-top:8px}
+.mcv{font-weight:700;color:var(--sub)}
+.mcv.ok{color:#2fb39c}
+.mcv.ng{color:#e0567f}
+.mcmeter{height:14px;background:#f1eaff;border-radius:7px;overflow:hidden}
+#mc_bar{height:100%;width:0;background:linear-gradient(90deg,#7fe0cf,#ff8fb6);transition:width .05s}
+.mctext{min-height:44px;background:#fff;border:2px solid var(--line);border-radius:14px;padding:10px;font-size:15px}
+#mc_close{background:#f1eaff;color:var(--ink)}
 #resetBtn{background:none;color:var(--sub);font-size:12px;border:none;margin-top:12px;text-decoration:underline}
 #naming .panel{border-radius:24px;margin:auto 16px;text-align:center}
 #naming{align-items:center}
@@ -180,6 +188,7 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
 <header>
   <button id="nameTag" aria-label="なまえを変える">Luna</button>
   <div class="hbtns">
+    <button class="round" id="micBtn" aria-label="マイクの確認">🎤</button>
     <button class="round" id="logBtn" aria-label="会話の記録">💬</button>
     <button class="round" id="gear" aria-label="設定">⚙</button>
   </div>
@@ -377,8 +386,33 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
     <label><input id="s_speculative" type="checkbox"> 話し終わる前から返事を準備する(速くなる)</label>
     <label><input id="s_localStt" type="checkbox"> 音声認識も端末の中で行う(対応しているAndroidのChromeのみ)</label>
     <label><input id="s_search" type="checkbox"> 「〜って何？」などはWikipediaで調べる</label>
+    <button class="bigbtn" id="mc_open2" style="width:100%;margin-top:16px">🎤 マイクの確認</button>
     <div class="btns"><button id="closeBtn">閉じる</button><button id="saveBtn">保存</button></div>
     <button id="resetBtn">会話の記録を消す</button>
+  </div>
+</div>
+
+<div id="micCheck" class="modal">
+  <div class="panel">
+    <h2>マイクの確認</h2>
+    <div class="mcgrid">
+      <span>安全な接続(https)</span><b id="mc_secure" class="mcv">-</b>
+      <span>マイク機能</span><b id="mc_gum" class="mcv">-</b>
+      <span>マイクの許可</span><b id="mc_perm" class="mcv">-</b>
+      <span>見つかったマイク</span><b id="mc_count" class="mcv">-</b>
+      <span>音声認識</span><b id="mc_sr" class="mcv">-</b>
+      <span>AI(WebGPU)</span><b id="mc_gpu" class="mcv">-</b>
+    </div>
+    <label>使うマイク</label>
+    <select id="mc_dev"></select>
+    <button class="bigbtn" id="mc_start" style="width:100%;margin-top:14px">テスト開始</button>
+    <div class="hint" id="mc_msg" style="margin-top:10px"></div>
+    <label>音の大きさ</label>
+    <div class="mcmeter"><div id="mc_bar"></div></div>
+    <div class="hint" id="mc_level"></div>
+    <label>聞き取った言葉</label>
+    <div id="mc_text" class="mctext"></div>
+    <div class="btns"><button id="mc_close">閉じる</button></div>
   </div>
 </div>
 
@@ -833,7 +867,7 @@ function initRec(){
       recWanted = false; toast('音声認識が許可されていません。ブラウザの設定でマイクを許可してね');
     }
   };
-  rec.onend = () => { if (recWanted) setTimeout(() => { try { rec.start(); } catch(err){} }, 120); };
+  rec.onend = () => { if (recWanted) setTimeout(() => { try { rec.start(curTrack()); } catch(err){} }, 120); };
 }
 function clearRec(ignoreEcho){
   finalText = ''; interimText = ''; skipUpTo = lastResLen; $('#live').textContent = '';
@@ -930,6 +964,99 @@ function tick(){
   }
 }
 
+/* ============ マイクの確認画面 ============ */
+let mc = { stream:null, ctx:null, an:null, buf:null, raf:0, rec:null };
+function curTrack(){ return mediaStream ? mediaStream.getAudioTracks()[0] : undefined; }
+function micConstraints(){
+  const a = { echoCancellation:true, noiseSuppression:true, autoGainControl:true };
+  if (S.micId) a.deviceId = { exact: S.micId };
+  return { audio: a };
+}
+function micErrorText(e){
+  const n = e && e.name;
+  if (n === 'NotAllowedError' || n === 'SecurityError') return 'マイクが許可されていません。アドレスバー左のアイコン → マイク → 許可 にして再読み込みしてね。Windowsの「設定 → プライバシーとセキュリティ → マイク」もオンか確認してね(Claudeアプリ内のブラウザではマイクは使えません)。';
+  if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'マイクが見つかりません。マイクがつながっているか確認して、🎤の確認画面で別のマイクを選んでみてね。';
+  if (n === 'NotReadableError' || n === 'AbortError') return 'マイクを開けませんでした。ほかのアプリ(OBS・ボイスチェンジャー・Discordなど)がマイクを使っているかも。閉じてからもう一度試してね。';
+  return 'マイクを開けませんでした: ' + ((e && (e.message || e.name)) || e);
+}
+function mcSet(id, ok, text){ const el = $('#mc_' + id); el.className = 'mcv' + (ok === true ? ' ok' : ok === false ? ' ng' : ''); el.textContent = text; }
+async function mcRefreshDevices(){
+  const sel = $('#mc_dev');
+  try {
+    const list = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+    sel.innerHTML = '';
+    const o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'いつものマイク(既定)'; sel.appendChild(o0);
+    list.forEach((d, i) => {
+      if (d.deviceId === 'default' || d.deviceId === 'communications' || !d.deviceId) return;
+      const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || ('マイク ' + (i + 1)); sel.appendChild(o);
+    });
+    sel.value = S.micId || '';
+    if (sel.value !== (S.micId || '')) sel.value = '';
+    return list.length;
+  } catch(e){ return 0; }
+}
+async function mcStatus(){
+  mcSet('secure', window.isSecureContext, window.isSecureContext ? 'OK' : 'NG(https:// で開いてね)');
+  const gum = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  mcSet('gum', gum, gum ? '対応' : '未対応');
+  mcSet('sr', !!SR, SR ? '対応' : '未対応(ChromeかEdgeを使ってね)');
+  mcSet('gpu', !!navigator.gpu, navigator.gpu ? '対応' : '未対応');
+  try {
+    const st = await navigator.permissions.query({ name: 'microphone' });
+    mcSet('perm', st.state === 'granted' ? true : st.state === 'denied' ? false : null,
+      ({ granted:'許可済み', denied:'ブロック中', prompt:'まだ聞かれていない' })[st.state] || st.state);
+  } catch(e){ mcSet('perm', null, '不明'); }
+  if (gum){ const n = await mcRefreshDevices(); mcSet('count', n > 0, n + '個'); }
+  else mcSet('count', false, '0個');
+}
+async function mcStart(){
+  mcStop();
+  S.micId = $('#mc_dev').value; saveSettings();
+  $('#mc_msg').textContent = 'マイクを開いています…';
+  try { mc.stream = await navigator.mediaDevices.getUserMedia(micConstraints()); }
+  catch(e){ $('#mc_msg').textContent = micErrorText(e); mcStatus(); return; }
+  const tr = mc.stream.getAudioTracks()[0];
+  $('#mc_msg').textContent = '使っているマイク: ' + ((tr && tr.label) || '不明') + '。話しかけてみてね。';
+  mcStatus();
+  mc.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = mc.ctx.createMediaStreamSource(mc.stream);
+  mc.an = mc.ctx.createAnalyser(); mc.an.fftSize = 1024; mc.buf = new Float32Array(mc.an.fftSize); src.connect(mc.an);
+  let peak = 0;
+  const loop = () => {
+    if (!mc.an) return;
+    mc.an.getFloatTimeDomainData(mc.buf); let s = 0; for (const v of mc.buf) s += v * v;
+    const rms = Math.sqrt(s / mc.buf.length); peak = Math.max(rms, peak * 0.97);
+    $('#mc_bar').style.width = Math.min(100, Math.round(rms * 900)) + '%';
+    $('#mc_level').textContent = peak > 0.01 ? '音が届いてるよ' : '音が届いていません(話しかけてみて)';
+    mc.raf = requestAnimationFrame(loop);
+  };
+  loop();
+  if (SR){
+    try {
+      const r = new SR(); r.lang = 'ja-JP'; r.continuous = true; r.interimResults = true; mc.rec = r;
+      r.onresult = e => { let t = ''; for (let i = e.resultIndex; i < e.results.length; i++) t += e.results[i][0].transcript; $('#mc_text').textContent = t; };
+      r.onerror = e => { $('#mc_text').textContent = '音声認識エラー: ' + e.error + ({ network:'(ネット接続が必要です)', 'not-allowed':'(マイクの許可が必要です)', 'audio-capture':'(マイクが使えません)' }[e.error] || ''); };
+      r.onend = () => { if (mc.rec === r){ try { r.start(tr); } catch(_){} } };
+      $('#mc_text').textContent = '(ここに聞き取った言葉が出ます)';
+      r.start(tr);
+    } catch(e){ $('#mc_text').textContent = '音声認識を開始できませんでした: ' + e.message; }
+  } else $('#mc_text').textContent = 'このブラウザは音声認識に対応していません';
+}
+function mcStop(){
+  cancelAnimationFrame(mc.raf);
+  if (mc.rec){ const r = mc.rec; mc.rec = null; try { r.abort(); } catch(_){} }
+  if (mc.stream) mc.stream.getTracks().forEach(t => t.stop());
+  try { mc.ctx && mc.ctx.close(); } catch(_){}
+  mc = { stream:null, ctx:null, an:null, buf:null, raf:0, rec:null };
+  $('#mc_bar').style.width = '0%';
+}
+function openMicCheck(){ if (running) stopCall(); $('#micCheck').classList.add('open'); mcStatus(); }
+$('#micBtn').onclick = openMicCheck;
+$('#mc_open2').onclick = () => { $('#settings').classList.remove('open'); openMicCheck(); };
+$('#mc_start').onclick = mcStart;
+$('#mc_close').onclick = () => { mcStop(); $('#micCheck').classList.remove('open'); };
+$('#mc_dev').onchange = () => { S.micId = $('#mc_dev').value; saveSettings(); if (mc.stream) mcStart(); };
+
 /* ============ 通話の開始・終了 ============ */
 async function prepareLocalStt(){
   useLocalStt = false;
@@ -952,19 +1079,19 @@ async function startCall(){
   running = true; document.body.classList.add('running'); $('#callIcon').textContent = '✕'; $('#callLabel').textContent = 'おわる';
   setState('thinking');
   try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true } });
+    mediaStream = await navigator.mediaDevices.getUserMedia(micConstraints());
     actx = new (window.AudioContext || window.webkitAudioContext)();
     const src = actx.createMediaStreamSource(mediaStream);
     analyser = actx.createAnalyser(); analyser.fftSize = 1024; abuf = new Float32Array(analyser.fftSize);
     src.connect(analyser);
   } catch(e){
-    analyser = null; toast('音量検出なしで動きます(割り込みは文字認識で判定)');
+    analyser = null; mediaStream = null; toast(micErrorText(e));
   }
   try { await ensureEngine(); }
   catch(e){ toast('AIを起動できませんでした: ' + (e.message || e)); stopCall(); return; }
   if (!running) return;
   await prepareLocalStt();
-  if (SR){ recWanted = true; initRec(); try { rec.start(); } catch(e){} }
+  if (SR){ recWanted = true; initRec(); try { rec.start(curTrack()); } catch(e){} }
   else toast('このブラウザは音声認識に未対応です。文字入力で話せます(AndroidのChrome推奨)');
   setState('listening');
   clearInterval(loopId); loopId = setInterval(tick, 40);
