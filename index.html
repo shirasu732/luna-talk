@@ -431,7 +431,8 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
 
 /* ============ 設定 ============ */
 const DEFAULT_PERSONA =
-`明るくて少しおっとりした、聞き上手な女の子のAI。
+'明るく聞き上手な女の子。一人称はわたし。やさしいタメ口。';
+const OLD_PERSONA = `明るくて少しおっとりした、聞き上手な女の子のAI。
 一人称は「わたし」。タメ口で、やわらかい口調。
 相手の話に興味をもって、ときどき短い質問を返す。知ったかぶりはしない。`;
 
@@ -443,8 +444,9 @@ const DEFAULTS = {
 };
 const STORE_KEY = 'hiyori-local-settings';
 const HIST_KEY = 'hiyori-local-history';
-const HIST_TURNS = 6;   // 小さいモデルなので直近だけ覚える(速さ優先)
+const HIST_TURNS = 4;   // 小さいモデルなので直近だけ覚える(速さ優先)
 let S = loadSettings();
+if (S.persona === OLD_PERSONA) S.persona = DEFAULT_PERSONA;
 if (!S.voiceV2){ S.pitch = Math.max(S.pitch, 1.35); S.voiceV2 = true; }
 if (/^あなたは「ひより」/.test(S.persona)) S.persona = DEFAULT_PERSONA;
 function loadSettings(){
@@ -519,15 +521,8 @@ function renderOldHistory(){
 
 /* ============ プロンプト ============ */
 function systemPrompt(){
-  const t = new Date().toLocaleDateString('ja-JP', { dateStyle:'full' });
-  return `${S.persona}
-あなたの名前は「${S.name}」。相手のことは「${S.userName || 'きみ'}」と呼ぶ。今日は${t}。
-これは音声通話です。次のルールを必ず守ってください。
-・返事は話し言葉で、1〜2文の短さにする。
-・箇条書き、記号、英語の見出しは使わない。絵文字や顔文字((^^)など)も絶対に使わない。
-・自分の発言の最後に「[遮られた]」があるときは、相手に話を遮られている。同じ話をくり返さず、相手の新しい話に答える。
-・「（メモ）」で始まる文は相手の発言ではなく、あなたへの参考情報。メモがあることには触れない。
-・知らないことは知らないと正直に言う。`;
+  // 内蔵GPUでは指示文を読むのが遅いので、できるだけ短くする
+  return `あなたは${S.name}。${S.persona}相手は「${S.userName || 'きみ'}」。話し言葉で1〜2文、短く答える。絵文字や記号は使わない。（メモ）は相手の発言ではない。`;
 }
 
 /* ============ 端末内AI(WebLLM) ============ */
@@ -767,7 +762,7 @@ async function runGen(g, msgs){
   try {
     const eng = await ensureEngine();
     if (g.cancelled) return;
-    const req = { messages: msgs, stream: true, max_tokens: 90, temperature: 0.7, top_p: 0.9, frequency_penalty: 0.3 };
+    const req = { messages: msgs, stream: true, max_tokens: 50, temperature: 0.7, top_p: 0.9, frequency_penalty: 0.3 };
     if (/^Qwen/.test(engineModel)) req.extra_body = { enable_thinking: false };
     const chunks = await eng.chat.completions.create(req);
     const it = chunks[Symbol.asyncIterator]();
