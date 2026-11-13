@@ -8,6 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="AIとおはなし">
 <title>AIとおはなし</title>
+<script type="importmap">{"imports":{"piper-plus":"https://unpkg.com/piper-plus@0.8.2/src/index.js","@piper-plus/g2p":"https://cdn.jsdelivr.net/npm/@piper-plus/g2p@0.4.2/src/index.js","onnxruntime-web":"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.min.mjs"}}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet">
 <style>
@@ -367,7 +368,13 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
     <input id="s_userName" type="text" maxlength="16">
     <label>キャラ設定(性格・口調)</label>
     <textarea id="s_persona"></textarea>
-    <label>声</label>
+    <label>声のしくみ</label>
+    <select id="s_voiceEngine">
+      <option value="neural">AIの自然な声(つくよみちゃん・おすすめ)</option>
+      <option value="device">端末の読み上げの声</option>
+    </select>
+    <div class="hint">AIの自然な声は初回だけダウンロード(約100MB)があります。声:piper-plus / つくよみちゃんコーパス(CV.夢前黎)</div>
+    <label>端末の声(端末の読み上げを使うとき)</label>
     <select id="s_voiceURI"></select>
     <div class="hint">端末に入っている日本語の声から選べます。</div>
     <label>話す速さ</label>
@@ -432,7 +439,7 @@ const DEFAULTS = {
   model: 'auto', userName: '', setupDone: false,
   name: 'Luna', persona: DEFAULT_PERSONA, voiceURI: '',
   rate: 1.1, pitch: 1.35, endMs: 650, sens: 2.8, barge: 2.6,
-  aizuchi: true, speculative: true, localStt: false, search: true
+  voiceEngine: 'neural', aizuchi: true, speculative: true, localStt: false, search: true
 };
 const STORE_KEY = 'hiyori-local-settings';
 const HIST_KEY = 'hiyori-local-history';
@@ -643,13 +650,73 @@ function makeUtter(text, opt){
   return u;
 }
 
-let ttsQueue = [], ttsBusy = false, curUtter = null, utterStart = 0, aizuchiUntil = 0;
+/* ---- AIの自然な声(piper-plus・つくよみちゃん) ---- */
+let piper = null, piperLoading = null, outCtx = null, curSrc = null, neuralReady = false;
+const clipCache = new Map();
+function useNeural(){ return S.voiceEngine !== 'device' && neuralReady; }
+function ensureOutCtx(){
+  if (!outCtx) outCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (outCtx.state === 'suspended') outCtx.resume();
+  return outCtx;
+}
+async function ensurePiper(){
+  if (piper) return piper;
+  if (piperLoading) return piperLoading;
+  piperLoading = (async () => {
+    const [pp, ort] = await Promise.all([import('piper-plus'), import('onnxruntime-web')]);
+    piper = await pp.PiperPlus.initialize({ model: 'tsukuyomi', ort });
+    neuralReady = true;
+    for (const w of AIZUCHI.concat(FILLERS)) synthClip(w).catch(() => {});
+    return piper;
+  })();
+  try { return await piperLoading; }
+  catch(e){ toast('AIの声を準備できなかったので、端末の声で話すね'); throw e; }
+  finally { piperLoading = null; }
+}
+function synthClip(text){
+  if (clipCache.has(text)) return clipCache.get(text);
+  const p = (async () => {
+    const a = await piper.synthesize(text, { lengthScale: 1 / Math.max(0.7, Math.min(1.6, S.rate)) });
+    const ctx = ensureOutCtx();
+    const buf = ctx.createBuffer(1, a.samples.length, a.sampleRate);
+    buf.copyToChannel(a.samples, 0);
+    return buf;
+  })();
+  if (text.length <= 8) clipCache.set(text, p);
+  return p;
+}
+function playBuf(buf, onend){
+  const ctx = ensureOutCtx();
+  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
+  if (onend) src.onended = onend;
+  src.start();
+  return src;
+}
+function playClip(w){ const p = clipCache.get(w); if (p) p.then(b => { if (b) playBuf(b); }).catch(() => {}); }
+
+let ttsQueue = []
+, ttsBusy = false, curUtter = null, utterStart = 0, aizuchiUntil = 0;
 let recentSpoken = '';   // エコー判定用
-function ttsEnqueue(text, g){ ttsQueue.push({ text, g }); if (!ttsBusy) ttsNext(); }
+function ttsEnqueue(text, g){
+  const item = { text, g };
+  if (useNeural()) item.bufP = synthClip(text).catch(() => null);
+  ttsQueue.push(item); if (!ttsBusy) ttsNext();
+}
 function ttsNext(){
   const item = ttsQueue.shift();
   if (!item){ ttsBusy = false; curUtter = null; onTtsDrained(); return; }
   ttsBusy = true;
+  if (item.bufP){
+    const token = { neural: true }; curUtter = token; utterStart = now();
+    setState('speaking');
+    item.bufP.then(buf => {
+      if (curUtter !== token || token._cancelled) return;
+      if (!buf){ token._done = true; ttsNext(); return; }
+      spokeSentence(item);
+      curSrc = playBuf(buf, () => { if (token._cancelled || token._done) return; token._done = true; curSrc = null; ttsNext(); });
+    });
+    return;
+  }
   const u = makeUtter(item.text); curUtter = u; u._item = item; utterStart = now();
   u.onstart = () => spokeSentence(item);
   const fin = () => { if (u._done || u._cancelled) return; u._done = true; if (!u._started) spokeSentence(item); ttsNext(); };
@@ -672,6 +739,7 @@ function ttsStop(){
   ttsQueue = [];
   if (curUtter) curUtter._cancelled = true;
   curUtter = null; ttsBusy = false;
+  if (curSrc){ try { curSrc.onended = null; curSrc.stop(); } catch(e){} curSrc = null; }
   try { synth.cancel(); } catch(e){}
 }
 function aiSpeakingNow(){ return ttsBusy || now() < aizuchiUntil; }
@@ -891,7 +959,7 @@ function doAizuchi(){
   const u = makeUtter(w, { rate: Math.min(1.8, S.rate * 1.1), volume: 0.8 });
   aizuchiUntil = now() + 700 + w.length * 120;
   recentSpoken = (recentSpoken + w).slice(-80);
-  try { synth.speak(u); } catch(e){}
+  if (useNeural() && clipCache.has(w)) playClip(w); else try { synth.speak(u); } catch(e){}
   const b = $('#aizuchiBubble'); b.textContent = w; b.classList.add('show');
   document.body.classList.remove('nod'); void document.body.offsetWidth; document.body.classList.add('nod');
   setTimeout(() => { b.classList.remove('show'); document.body.classList.remove('nod'); }, 900);
@@ -901,7 +969,7 @@ function sayFiller(){
   const w = FILLERS[Math.floor(Math.random() * FILLERS.length)];
   aizuchiUntil = now() + 500 + w.length * 160;
   recentSpoken = (recentSpoken + w).slice(-80);
-  try { synth.speak(makeUtter(w, { rate: S.rate })); } catch(e){}
+  if (useNeural() && clipCache.has(w)) playClip(w); else try { synth.speak(makeUtter(w, { rate: S.rate })); } catch(e){}
 }
 function tick(){
   const t = now();
@@ -927,7 +995,7 @@ function tick(){
   document.body.style.setProperty('--glow', analyser ? Math.min(1, level / (base * 2.5)).toFixed(2) : 0);
 
   // TTSのonendが来ない端末向けの保険
-  if (ttsBusy && curUtter && t - utterStart > 600 && !synth.speaking && !synth.pending){
+  if (ttsBusy && curUtter && !curUtter.neural && t - utterStart > 600 && !synth.speaking && !synth.pending){
     const u = curUtter; if (!u._done && !u._cancelled){ u._done = true; if (!u._started) spokeSentence(u._item); ttsNext(); }
   }
 
@@ -1088,6 +1156,7 @@ async function prepareLocalStt(){
 async function startCall(){
   if (!synth){ toast('このブラウザは音声読み上げに対応していません'); }
   try { synth && synth.speak(makeUtter('')); } catch(e){}   // iOSの読み上げロック解除
+  try { ensureOutCtx(); } catch(e){}
   running = true; document.body.classList.add('running'); $('#callIcon').textContent = '✕'; $('#callLabel').textContent = 'おわる';
   setState('thinking');
   try {
@@ -1099,7 +1168,7 @@ async function startCall(){
   } catch(e){
     analyser = null; mediaStream = null; toast(micErrorText(e));
   }
-  try { await ensureEngine(); }
+  try { await Promise.all([ensureEngine(), S.voiceEngine !== 'device' ? ensurePiper().catch(() => {}) : null]); }
   catch(e){ toast('AIを起動できませんでした: ' + (e.message || e)); stopCall(); return; }
   if (!running) return;
   await prepareLocalStt();
@@ -1128,12 +1197,13 @@ function sendText(){
   if (gen && gen.committed) bargeIn();
   if (gen && !gen.committed) abortGen(gen);
   try { synth && synth.speak(makeUtter('')); } catch(e){}
+  try { ensureOutCtx(); if (S.voiceEngine !== 'device') ensurePiper().catch(() => {}); } catch(e){}
   if (!running) loopId = loopId || setInterval(tick, 40);
   commitUser(v);
 }
 
 /* ============ 設定画面 ============ */
-const FIELDS = ['model','name','userName','persona','voiceURI','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
+const FIELDS = ['voiceEngine','model','name','userName','persona','voiceURI','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
 function openSettings(){
   for (const k of FIELDS){
     const el = $('#s_' + k); if (!el) continue;
