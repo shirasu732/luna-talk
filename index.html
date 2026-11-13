@@ -438,7 +438,16 @@ body.l2d #char{display:none}
       <option value="auto">おまかせ(PCでOllamaが動いていればそれを使う)</option>
       <option value="ollama">PCのOllama</option>
       <option value="browser">ブラウザの中(スマホ用)</option>
+      <option value="claude">Claude(APIキーが必要・使った分だけ有料)</option>
     </select>
+    <div class="hint">会話で使うAIです。作る・質問する画面(✨)では、画面の上でAIを別に選べます。</div>
+    <label>ClaudeのAPIキー</label>
+    <input id="s_claudeKey" type="password" autocomplete="off" placeholder="sk-ant-...">
+    <div class="hint">console.anthropic.com で作れます。キーはこの端末の中だけに保存され、公開サイトには載りません。使った分だけ料金がかかり、回数の上限もあります。</div>
+    <label>会話で使うClaudeのモデル</label>
+    <select id="s_claudeChatModel"><option value="claude-haiku-5-5">Claude Haiku(速い・安い・おすすめ)</option><option value="claude-sonnet-5-5">Claude Sonnet</option></select>
+    <label>作る・質問するときのClaudeのモデル</label>
+    <select id="s_claudeModel"><option value="claude-sonnet-5-5">Claude Sonnet(おすすめ)</option><option value="claude-opus-5-5">Claude Opus(いちばんかしこい・高い)</option><option value="claude-haiku-5-5">Claude Haiku(速い・安い)</option></select>
     <label>Ollamaのモデル名</label>
     <input id="s_ollamaModel" type="text">
     <div class="hint">gemma3:1b(速い) / gemma3:4b(かしこい・少し遅い)。PowerShellで ollama pull モデル名 を実行して入れてね。</div>
@@ -542,6 +551,9 @@ body.l2d #char{display:none}
     <button class="round" id="asBack" aria-label="もどる">←</button>
     <button class="round" id="asMenu" aria-label="会話の一覧">☰</button>
     <h2>Lunaアシスタント<br><span id="asModel"></span></h2>
+    <select id="asEngineSel" aria-label="使うAI" style="border:none;background:#f1eaff;border-radius:10px;padding:6px 8px;font:inherit;font-size:12px;color:var(--ink);max-width:120px">
+      <option value="auto">AI:おまかせ</option><option value="claude">Claude</option><option value="ollama">PCのOllama</option><option value="browser">ブラウザの中</option>
+    </select>
     <button class="round" id="asNewBtn" aria-label="新しい会話">＋</button>
   </div>
   <div class="asMain">
@@ -590,7 +602,7 @@ const DEFAULTS = {
   name: 'Luna', persona: DEFAULT_PERSONA, voiceURI: '',
   rate: 1.1, pitch: 1.35, endMs: 650, sens: 2.8, barge: 2.6,
   aiEngine: 'auto', ollamaModel: 'gemma3:1b', smartModel: 'gemma3:4b', ollamaUrl: 'http://localhost:11434',
-  voiceEngine: 'clover', cloverPitch: 0, avatar: 'svg', l2dScale: 1.7, l2dY: 0, aizuchi: true, speculative: true, localStt: false, search: true
+  voiceEngine: 'clover', cloverPitch: 0, claudeKey: '', claudeModel: 'claude-sonnet-5-5', claudeChatModel: 'claude-haiku-5-5', asEngine: 'auto', avatar: 'svg', l2dScale: 1.7, l2dY: 0, aizuchi: true, speculative: true, localStt: false, search: true
 };
 const STORE_KEY = 'hiyori-local-settings';
 const HIST_KEY = 'hiyori-local-history';
@@ -1212,12 +1224,19 @@ function startGen(userText, committed, memo){
 async function runGen(g, msgs){
   if (g.cancelled) return;
   try {
-    if (ollamaOK === null) await detectOllama(true);
-    const eng = ollamaOK ? null : await ensureEngine();
+    const useClaude = S.aiEngine === 'claude' && claudeReady();
+    if (S.aiEngine === 'claude' && !claudeReady()) toast('ClaudeのAPIキーが入っていないので、ほかのAIで話すね');
+    if (!useClaude && ollamaOK === null) await detectOllama(true);
+    const eng = (useClaude || ollamaOK) ? null : await ensureEngine();
     if (g.cancelled) return;
     const req = { messages: msgs, stream: true, max_tokens: 50, temperature: 0.7, top_p: 0.9, frequency_penalty: 0.3 };
     if (/^Qwen/.test(engineModel)) req.extra_body = { enable_thinking: false };
-    const chunks = ollamaOK ? ollamaStream(msgs, g) : await eng.chat.completions.create(req);
+    let chunks;
+    if (useClaude){
+      const sp = systemPrompt(), ctl = new AbortController(); g.abortCtl = ctl;
+      const cm = msgs.map((m, i) => (i === 0 && m.role !== 'system' && m.content.startsWith(sp)) ? { role: m.role, content: m.content.slice(sp.length).trim() } : m);
+      chunks = (async function*(){ for await (const x of claudeStream({ system: sp, messages: cm, model: S.claudeChatModel || 'claude-haiku-5-5', maxTokens: 160, signal: ctl.signal })) if (x.text) yield { choices: [{ delta: { content: x.text } }] }; })();
+    } else chunks = ollamaOK ? ollamaStream(msgs, g) : await eng.chat.completions.create(req);
     const it = chunks[Symbol.asyncIterator]();
     const stop = new Promise(res => { g.stop = res; });
     for (;;){
@@ -1294,19 +1313,55 @@ function detectTask(text){
   if (/(って|とは)(何|なに|なん|誰|だれ)/.test(t) && !/(調べて|検索|詳しく|くわしく|まとめて)/.test(t)) return false;
   return true;
 }
-function handOffToAssist(text){
+// Shizuku-Duplexと同じ考え方:会話はそのまま続け、むずかしい依頼は「裏のかしこいAI」に任せて、できたら話の切れ目で伝える
+const bgJobs = [];
+function mdPlain(md){ return md.replace(/```[\s\S]*?```/g, '(コード)').replace(/\|.*\|/g, '').replace(/[#*_>`\-]+/g, '').replace(/\[(\d+)\]/g, '').replace(/\s+/g, ' ').trim(); }
+async function handOffToAssist(text){
   if (gen) abortGen(gen);
-  const holder = { id: ++genSeq, spoken:[], el:null };
-  const line = /調べ|検索|ググ/.test(text) ? 'わかった、調べて画面に出すね。ちょっと待ってて。' : 'わかった、作って画面に出すね。ちょっと待ってて。';
-  ttsEnqueue(line, holder);
-  setState('thinking');
-  setTimeout(async () => {
+  const pick0 = await asPickEngine();
+  if (pick0.kind === 'browser'){
+    // ブラウザの中のAIは1つしか同時に動かせないので、画面を切り替えて作る
+    const holder = { id: ++genSeq, spoken:[], el:null };
+    ttsEnqueue('わかった、画面に出して作るね。ちょっと待ってて。', holder); setState('thinking');
     const wait = Date.now(); while ((ttsBusy || ttsQueue.length) && Date.now() - wait < 8000) await new Promise(r => setTimeout(r, 150));
-    openAssist(); asNew(); $('#asInput').value = text;
-    await asSend();
-    const last = asCur && asCur.msgs[asCur.msgs.length - 1];
-    if (last && last.role === 'assistant' && !/^⚠️/.test(last.content) && $('#assist').classList.contains('open')) speakLong('できたよ！画面に出しておいたから見てね。');
-  }, 50);
+    openAssist(); asNew(); $('#asInput').value = text; await asSend();
+    if ($('#assist').classList.contains('open')) speakLong('できたよ！画面に出しておいたから見てね。');
+    return;
+  }
+  const holder = { id: ++genSeq, spoken:[], el:null };
+  const isSearch = /調べ|検索|ググ/.test(text);
+  ttsEnqueue(isSearch ? 'わかった、裏で調べておくね。そのまま話してていいよ。' : 'わかった、作っておくね。できたら教えるから、そのまま話してていいよ。', holder);
+  const note = addNote((isSearch ? '🔎 調べています: ' : '✨ 作っています: ') + text.slice(0, 40), 'search');
+  const chat = { id: Date.now().toString(36), title: text.replace(/\s+/g, ' ').slice(0, 24), msgs: [], t: Date.now() };
+  const um = { role: 'user', content: text, research: (S.asWeb || 'auto') === 'on' || ((S.asWeb || 'auto') === 'auto' && RESEARCH_RE.test(text)) };
+  chat.msgs.push(um); asChats.unshift(chat); asSave();
+  const job = { chat, done: false }; bgJobs.push(job);
+  (async () => {
+    const out = { role: 'assistant', content: '' };
+    try {
+      const pick = await asPickEngine();
+      const web = pick.kind === 'claude' && um.research;
+      if (!web && um.research){ const src = await research(text, t => { note.textContent = t; }, pick.kind !== 'browser'); um.aug = sourcesPrompt(text, src); out.sources = src.map(x => ({ title: x.title, url: x.url })); }
+      note.textContent = (isSearch ? '🔎 まとめています: ' : '✨ 作っています: ') + text.slice(0, 40);
+      chat.msgs.push(out);
+      for await (const t of asStream(chat, pick, web)){
+        if (typeof t !== 'string'){ if (t.source){ out.sources = out.sources || []; if (!out.sources.some(x => x.url === t.source.url) && out.sources.length < 8) out.sources.push(t.source); } continue; }
+        out.content += t;
+      }
+      out.content = out.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+      asSave();
+      note.textContent = '✅ できたよ(✨の画面で見られます): ' + chat.title; note.style.cursor = 'pointer';
+      note.onclick = () => { openAssist(); asOpen(chat.id); };
+      const gist = mdPlain(out.content).slice(0, 500);
+      pendingResults.push({ memo: `（メモ）さっき頼まれた「${text}」が裏でできあがった。内容の要点：${gist} ……これをもとに、いちばん大事なところだけを話し言葉で1〜2文で伝え、くわしくは✨の画面に出しておいたと言って。` });
+    } catch(e){
+      if (!chat.msgs.includes(out)) chat.msgs.push(out);
+      out.content = '⚠️ ' + (e.message || e); asSave();
+      note.textContent = '⚠️ できなかった: ' + (e.message || e);
+      pendingResults.push({ memo: `（メモ）さっき頼まれた「${text}」は、エラーでできなかった。あやまって、もう一度頼んでほしいと伝えて。` });
+    }
+    job.done = true;
+  })();
 }
 function commitUser(text){
   pushHistory('user', text); addMsg('user', text); clearRec(false);
@@ -1354,7 +1409,9 @@ function launchSearch(q){
   });
 }
 function deliverResult(){
-  const { q, r } = pendingResults.shift();
+  const item = pendingResults.shift();
+  if (item.memo){ startGen(null, true, item.memo); return; }
+  const { q, r } = item;
   const memo = r
     ? `（メモ）「${q}」を調べた結果：${r.text} これをもとに、相手にわかりやすく話し言葉で短く伝えて。`
     : `（メモ）「${q}」は調べても見つからなかった。正直にそう伝えて。`;
@@ -1767,6 +1824,54 @@ function asAddImage(file){
   img.src = u;
 }
 
+/* ---- Claude(Anthropic API・APIキーが必要・使った分だけ有料) ---- */
+const CLAUDE_MODELS = { 'claude-haiku-5-5': 'Claude Haiku(速い・安い)', 'claude-sonnet-5-5': 'Claude Sonnet(おすすめ)', 'claude-opus-5-5': 'Claude Opus(いちばんかしこい・高い)' };
+function claudeReady(){ return !!(S.claudeKey && S.claudeKey.trim()); }
+function claudeMsgs(msgs){
+  const out = [];
+  for (const m of msgs){
+    if (m.role === 'system') continue;
+    const role = m.role === 'assistant' ? 'assistant' : 'user';
+    let content = m.content;
+    if (m.images && m.images.length && role === 'user')
+      content = m.images.map(b => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b } })).concat([{ type: 'text', text: m.content || '画像について教えて' }]);
+    const last = out[out.length - 1];
+    if (last && last.role === role && typeof last.content === 'string' && typeof content === 'string') last.content += '\n' + content;
+    else out.push({ role, content });
+  }
+  while (out.length && out[0].role !== 'user') out.shift();
+  return out;
+}
+// yields {text} / {source:{title,url}}
+async function* claudeStream({ system, messages, model, maxTokens, signal, web }){
+  const body = { model, max_tokens: maxTokens || 2048, system, messages: claudeMsgs(messages), stream: true };
+  if (web) body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }];
+  const res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal,
+    headers: { 'content-type': 'application/json', 'x-api-key': S.claudeKey.trim(), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+    body: JSON.stringify(body) });
+  if (!res.ok){
+    let msg = ''; try { const j = await res.json(); msg = (j.error && j.error.message) || ''; } catch(e){}
+    const hint = res.status === 401 ? 'APIキーがまちがっているみたい' : res.status === 429 ? '使いすぎの上限に当たったみたい。少し待ってね' : res.status === 400 && /credit|balance/i.test(msg) ? 'クレジット(残高)が足りないみたい' : '';
+    const err = new Error(`Claude ${res.status} ${hint || msg}`.trim()); err.status = res.status; err.detail = msg; throw err;
+  }
+  const rd = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+  for (;;){
+    const { value, done } = await rd.read(); if (done) return;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0){
+      const ev = buf.slice(0, i); buf = buf.slice(i + 2);
+      const line = ev.split('\n').find(l => l.startsWith('data:')); if (!line) continue;
+      let j; try { j = JSON.parse(line.slice(5)); } catch(e){ continue; }
+      if (j.type === 'error') throw new Error('Claude: ' + ((j.error && j.error.message) || 'エラー'));
+      if (j.type === 'content_block_delta' && j.delta && j.delta.type === 'text_delta') yield { text: j.delta.text };
+      if (j.type === 'content_block_start' && j.content_block && j.content_block.type === 'web_search_tool_result' && Array.isArray(j.content_block.content))
+        for (const r of j.content_block.content) if (r.url) yield { source: { title: r.title || r.url, url: r.url } };
+      if (j.type === 'message_stop') return;
+    }
+  }
+}
+
 /* ---- 調べもの(Wikipedia+指定URL・キー不要) ---- */
 const RESEARCH_RE = /(調べ|検索|ググ|とは|について|最新|ニュース|比較|違い|歴史|由来|いつ|誰が|だれが|どこで|何年|理由|仕組み|しくみ|原因|特徴|https?:\/\/)/;
 async function ollamaQuick(prompt, ms){
@@ -1836,7 +1941,12 @@ function sourcesPrompt(q, src){
     src.map((s, i) => `【資料${i + 1}】${s.title}\n${s.text}`).join('\n\n') + '\n\n【質問】' + q;
 }
 function asSystem(){
-  return `あなたは${S.name}。ユーザーのための、かしこくて親切な日本語アシスタント。質問には正確に答え、頼まれたもの(文章・コード・アイデアなど)はそのまま使える完成した形で作る。見出し・箇条書き・表・コードブロックなどMarkdownを使って読みやすくする。分からないことや自信のないことは正直にそう言う。`;
+  return `あなたは${S.name}。ユーザーのための、かしこくて親切な日本語アシスタント。
+- まず質問の種類を見きわめ、それに合った形で答える:事実の質問→最初に結論を一言で、そのあと必要なだけ補足。やり方の質問→番号つきの手順。比較→表。相談や悩み→相手の状況に寄りそって具体的な提案。雑談→短く自然に。
+- 頼まれたもの(文章・メール・コード・企画など)は、そのまま使える完成した形で作る。コードは動く完全なものをコードブロックで。
+- 長さは質問に合わせる。簡単な質問に長々と答えない。
+- 見出し・箇条書き・表など、読みやすいMarkdownを使う。
+- 分からないことや自信のないことは正直にそう言い、推測で事実を作らない。`;
 }
 async function pickSmartModel(){
   try {
@@ -1850,10 +1960,39 @@ async function pickSmartModel(){
     return names[0] || null;
   } catch(e){ return null; }
 }
-async function* asStream(chat){
+async function asPickEngine(){
+  const e = S.asEngine || 'auto';
+  if (e === 'claude' || (e === 'auto' && claudeReady())){
+    if (claudeReady()) return { kind: 'claude', model: S.claudeModel || 'claude-sonnet-5-5' };
+    asNote('ClaudeのAPIキーが入っていないので、ほかのAIで答えるね(⚙設定で入れられるよ)');
+  }
+  if (e !== 'browser'){ const m = await pickSmartModel(); if (m) return { kind: 'ollama', model: m }; if (e === 'ollama') asNote('PCのOllamaにつながらなかったので、ブラウザの中のAIで答えるね'); }
+  return { kind: 'browser' };
+}
+async function* asStream(chat, pick, web){
   let hist = chat.msgs.slice(0, -1).slice(-14);
   while (hist.length && hist[0].role !== 'user') hist.shift();
-  const model = S.aiEngine === 'browser' ? null : await pickSmartModel();
+  if (pick.kind === 'claude'){
+    asShowModel(CLAUDE_MODELS[pick.model] || pick.model); asNote('');
+    asCtl = new AbortController();
+    const msgs = hist.map(m => { const o = { role: m.role, content: m.aug || m.content }; if (m.b64 && m.b64.length) o.images = m.b64; return o; });
+    const sys = asSystem() + (web ? ' 必要に応じてweb検索を使い、最新で正確な情報をもとに答える。使った情報源はわかるように書く。' : '');
+    try {
+      for await (const x of claudeStream({ system: sys, messages: msgs, model: pick.model, maxTokens: 4096, signal: asCtl.signal, web })) yield x.text != null ? x.text : x;
+      return;
+    } catch(e){
+      if (web && e.status === 400 && /tool|web_search/i.test(e.detail || '')){
+        asNote('このAPIキーではweb検索が使えないので、Wikipediaで調べて答えるね');
+        const um = hist[hist.length - 1]; const src = await research(um.content, null, true);
+        um.aug = sourcesPrompt(um.content, src); for (const x of src) yield { source: { title: x.title, url: x.url } };
+        const msgs2 = hist.map(m => ({ role: m.role, content: m.aug || m.content }));
+        for await (const x of claudeStream({ system: asSystem(), messages: msgs2, model: pick.model, maxTokens: 4096, signal: asCtl.signal })) if (x.text != null) yield x.text;
+        return;
+      }
+      throw e;
+    }
+  }
+  const model = pick.kind === 'ollama' ? pick.model : null;
   if (model){
     asShowModel(model + '(PC)');
     asNote(model !== S.smartModel && !/12b|4b|8b/.test(model) ? `かしこいAIがまだ入っていないので「${model}」で答えるね。PowerShellで ollama pull ${S.smartModel} を実行すると、もっとかしこくなるよ` : '');
@@ -1920,14 +2059,18 @@ async function asGenerate(){
   try {
     await loadMd();
     const um = chat.msgs[chat.msgs.length - 2];
-    if (um && um.role === 'user' && um.research){
-      const big = S.aiEngine !== 'browser' && !!(await pickSmartModel());
+    const pick = await asPickEngine();
+    const web = pick.kind === 'claude' && um && um.research;
+    if (web) el.innerHTML = '<div class="hint">🔎 webで調べています…</div><span class="typing"><i></i><i></i><i></i></span>';
+    if (!web && um && um.role === 'user' && um.research){
+      const big = pick.kind !== 'browser';
       const src = await research(um.content, t => { if (asCur === chat) el.innerHTML = '<div class="hint">' + t.replace(/</g, '&lt;') + '</div><span class="typing"><i></i><i></i><i></i></span>'; }, big);
       um.aug = sourcesPrompt(um.content, src);
       out.sources = src.map(x => ({ title: x.title, url: x.url }));
       if (!asBusy) throw Object.assign(new Error('stop'), { name: 'AbortError' });
     }
-    for await (const t of asStream(chat)){
+    for await (const t of asStream(chat, pick, web)){
+      if (typeof t !== 'string'){ if (t.source){ out.sources = out.sources || []; if (!out.sources.some(x => x.url === t.source.url) && out.sources.length < 8) out.sources.push(t.source); } continue; }
       out.content += t;
       if (asCur === chat && performance.now() - last > 90){
         last = performance.now(); renderMd(el, out.content.replace(/<think>[\s\S]*?(<\/think>|$)/g, ''));
@@ -1972,13 +2115,17 @@ function openAssist(){
   if (running) stopCall();
   $('#assist').classList.add('open');
   asRenderTpl(); asRender(); loadMd().then(() => { if (asCur) asRender(); });
-  if (S.aiEngine !== 'browser') pickSmartModel().then(m => { if (m) asShowModel(m + '(PC)'); else asShowModel('ブラウザの中のAI(簡易)'); });
+  asPickEngine().then(p => asShowModel(engLabel(p)));
 }
 function closeAssist(){ if (asBusy) asStop(); stopSpeakLong(); $('#assist').classList.remove('open'); }
 $('#assistBtn').onclick = openAssist;
 function asWebUpd(){ const b = $('#asWeb'), m = S.asWeb || 'auto'; b.className = m; b.title = { auto:'調べる:自動(調べものっぽい質問だけ調べる)', on:'調べる:いつも調べてから答える', off:'調べる:調べない' }[m]; }
 $('#asWeb').onclick = () => { const m = S.asWeb || 'auto'; S.asWeb = m === 'auto' ? 'on' : m === 'on' ? 'off' : 'auto'; saveSettings(); asWebUpd(); toast({ auto:'🔎 自動:調べものっぽい質問のときだけ調べるよ', on:'🔎 オン:いつも調べてから答えるよ', off:'🔎 オフ:調べずに答えるよ' }[S.asWeb]); };
 asWebUpd();
+const engLabel = p => p.kind === 'claude' ? CLAUDE_MODELS[p.model] : p.kind === 'ollama' ? p.model + '(PC)' : 'ブラウザの中のAI(簡易)';
+$('#asEngineSel').value = S.asEngine || 'auto';
+$('#asEngineSel').onchange = e => { S.asEngine = e.target.value; saveSettings();
+  if (S.asEngine === 'claude' && !claudeReady()) toast('⚙設定でClaudeのAPIキーを入れてね'); asPickEngine().then(p => asShowModel(engLabel(p))); };
 $('#asBack').onclick = closeAssist;
 $('#asMenu').onclick = () => $('#asSide').classList.toggle('open');
 $('#asNewBtn').onclick = asNew;
@@ -2062,7 +2209,7 @@ function sendText(){
 }
 
 /* ============ 設定画面 ============ */
-const FIELDS = ['aiEngine','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','persona','voiceURI','cloverPitch','avatar','l2dScale','l2dY','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
+const FIELDS = ['aiEngine','claudeKey','claudeModel','claudeChatModel','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','persona','voiceURI','cloverPitch','avatar','l2dScale','l2dY','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
 function openSettings(){
   for (const k of FIELDS){
     const el = $('#s_' + k); if (!el) continue;
