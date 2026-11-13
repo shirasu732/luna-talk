@@ -47,8 +47,11 @@ header{position:relative;z-index:2;display:flex;align-items:center;justify-conte
   font-size:18px;box-shadow:0 3px 10px #b9a6f540;cursor:pointer}
 
 /* キャラのステージ */
-#stage{position:relative;z-index:1;flex:1;min-height:0;display:flex;justify-content:center;align-items:flex-end}
-#char{height:100%;max-height:560px;width:auto;max-width:100%;overflow:visible;filter:drop-shadow(0 8px 18px #b9a6f555);-webkit-mask-image:linear-gradient(to bottom,#000 70%,transparent 92%);mask-image:linear-gradient(to bottom,#000 70%,transparent 92%)}
+#stage{position:fixed;left:0;right:0;top:calc(env(safe-area-inset-top) + 58px);bottom:0;z-index:1;display:flex;justify-content:center;align-items:flex-end;pointer-events:none}
+#stage>*{pointer-events:auto}
+body #captions{margin-top:auto}
+#statusRow{background:#ffffffc0;border-radius:12px;padding:2px 10px;backdrop-filter:blur(4px)}
+#char{height:100%;max-height:560px;width:auto;max-width:100%;overflow:visible;filter:drop-shadow(0 8px 18px #b9a6f555);-webkit-mask-image:linear-gradient(to bottom,#000 80%,transparent 100%);mask-image:linear-gradient(to bottom,#000 80%,transparent 100%)}
 #body{animation:breathe 3.6s ease-in-out infinite;transform-origin:200px 480px}
 @keyframes breathe{50%{transform:translateY(-3px) scale(1.006)}}
 .headRot{transform-origin:200px 320px;animation:sway 7s ease-in-out infinite;transition:rotate .5s}
@@ -229,6 +232,11 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
 .asBox:focus-within{border-color:var(--lav)}
 #asInput{flex:1;border:none;outline:none;resize:none;font-size:16px;font-family:inherit;color:var(--ink);max-height:180px;padding:8px 4px;background:transparent;line-height:1.5}
 #asAttach{border:none;background:none;font-size:20px;cursor:pointer;padding:6px}
+#asWeb{width:42px;height:42px;flex:none;border:none;border-radius:50%;background:#f1eaff;font-size:17px;cursor:pointer;opacity:.55}
+#asWeb.on{opacity:1;background:#ffe3ef;box-shadow:0 0 0 2px #ff8fb6 inset}
+#asWeb.auto{opacity:.9}
+.asSrc{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.asSrc a{font-size:12px;background:#eefaf7;color:#2f7f73;border-radius:10px;padding:4px 9px;text-decoration:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #asSendBtn{width:42px;height:42px;flex:none;border:none;border-radius:50%;background:linear-gradient(135deg,#ff8fb6,#b9a6f5);color:#fff;font-size:17px;cursor:pointer}
 #asSendBtn.stop{background:#4b3d6e}
 .asFoot{text-align:center;margin-top:6px}
@@ -248,6 +256,9 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
 .pbar{height:10px;background:#f1eaff;border-radius:5px;margin:12px 0 10px;overflow:hidden}
 #pfill{height:100%;width:0;background:linear-gradient(90deg,#7fe0cf,#ff8fb6);transition:width .2s}
 .hint2{font-size:11px;color:var(--sub)}
+#l2dCanvas{position:absolute;inset:0;width:100%;height:100%;display:none;touch-action:none}
+body.l2d #l2dCanvas{display:block}
+body.l2d #char{display:none}
 </style>
 </head>
 <body data-state="idle">
@@ -450,12 +461,32 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
     <input id="s_userName" type="text" maxlength="16">
     <label>キャラ設定(性格・口調)</label>
     <textarea id="s_persona"></textarea>
+    <label>キャラの見た目</label>
+    <select id="s_avatar">
+      <option value="svg">はじめから入っているキャラ</option>
+      <option value="live2d">Live2Dモデル</option>
+    </select>
+    <div class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn" id="l2dZipBtn">zipを読み込む</button><button type="button" class="btn" id="l2dDirBtn">フォルダを読み込む(PC)</button><span class="val" id="l2dStat">未読み込み</span></div>
+    <input id="l2dZip" type="file" accept=".zip,application/zip" style="display:none">
+    <input id="l2dDir" type="file" webkitdirectory multiple style="display:none">
+    <div class="hint">配布されているLive2Dモデル(Cubism 3以降、.model3.json が入っているもの)を、zipのままかフォルダごと読み込めます。読み込んだモデルはこの端末に保存されます。モデルごとの利用規約を守って使ってください。</div>
+    <label>Live2Dの大きさ</label>
+    <div class="row"><input id="s_l2dScale" type="range" min="0.5" max="3" step="0.05"><span class="val" id="v_l2dScale"></span></div>
+    <label>Live2Dの上下の位置(大きくすると下へ)</label>
+    <div class="row"><input id="s_l2dY" type="range" min="-50" max="100" step="1"><span class="val" id="v_l2dY"></span></div>
     <label>声のしくみ</label>
     <select id="s_voiceEngine">
-      <option value="neural">AIの自然な声(つくよみちゃん・おすすめ)</option>
+      <option value="clover">自分の声 Clover(おすすめ)</option>
+      <option value="neural">AIの自然な声(つくよみちゃん)</option>
       <option value="device">端末の読み上げの声</option>
     </select>
     <div class="hint">AIの自然な声は初回だけダウンロード(約100MB)があります。声:piper-plus / つくよみちゃんコーパス(CV.夢前黎)</div>
+    <label>Clover声モデル</label>
+    <div class="row"><button type="button" class="btn" id="cloverPick">モデル(.onnx)を読み込む</button><span class="val" id="cloverStat">未読み込み</span></div>
+    <input id="cloverFile" type="file" accept=".onnx" style="display:none">
+    <div class="hint">clover_front.onnx を一度読み込むと、この端末に保存されて次からは自動で使われます。</div>
+    <label>Clover声の高さ(半音)</label>
+    <div class="row"><input id="s_cloverPitch" type="range" min="-12" max="12" step="1"><span class="val" id="v_cloverPitch"></span></div>
     <label>端末の声(端末の読み上げを使うとき)</label>
     <select id="s_voiceURI"></select>
     <div class="hint">端末に入っている日本語の声から選べます。</div>
@@ -530,6 +561,7 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
         <div id="asImgs"></div>
         <div class="asBox">
           <button id="asAttach" aria-label="画像をつける">📎</button>
+          <button id="asWeb" aria-label="調べてから答える" title="調べてから答える(自動/オン/オフ)">🔎</button>
           <textarea id="asInput" rows="1" placeholder="お願いや質問を書いてね"></textarea>
           <button id="asSendBtn" aria-label="送信">➤</button>
         </div>
@@ -558,7 +590,7 @@ const DEFAULTS = {
   name: 'Luna', persona: DEFAULT_PERSONA, voiceURI: '',
   rate: 1.1, pitch: 1.35, endMs: 650, sens: 2.8, barge: 2.6,
   aiEngine: 'auto', ollamaModel: 'gemma3:1b', smartModel: 'gemma3:4b', ollamaUrl: 'http://localhost:11434',
-  voiceEngine: 'neural', aizuchi: true, speculative: true, localStt: false, search: true
+  voiceEngine: 'clover', cloverPitch: 0, avatar: 'svg', l2dScale: 1.7, l2dY: 0, aizuchi: true, speculative: true, localStt: false, search: true
 };
 const STORE_KEY = 'hiyori-local-settings';
 const HIST_KEY = 'hiyori-local-history';
@@ -824,6 +856,7 @@ async function ensurePiper(){
   piperLoading = (async () => {
     const [pp, ort] = await Promise.all([import('piper-plus'), import('onnxruntime-web')]);
     piper = await pp.PiperPlus.initialize({ model: 'tsukuyomi', ort });
+    if (S.voiceEngine === 'clover') await ensureClover().catch(() => null);
     neuralReady = true;
     for (const w of AIZUCHI.concat(FILLERS)) synthClip(w).catch(() => {});
     return piper;
@@ -832,11 +865,266 @@ async function ensurePiper(){
   catch(e){ toast('AIの声を準備できなかったので、端末の声で話すね'); throw e; }
   finally { piperLoading = null; }
 }
+/* ---- Clover声(Beatrice v2)ボコーダー ---- */ // — port of overlap_add / generate_noise / post filter
+const TAU = Math.PI * 2;
+function makeFFT(n) {
+  const lv = Math.log2(n) | 0, rev = new Uint32Array(n), cs = new Float64Array(n / 2), sn = new Float64Array(n / 2);
+  for (let i = 0; i < n; i++) { let r = 0; for (let b = 0; b < lv; b++) r |= ((i >> b) & 1) << (lv - 1 - b); rev[i] = r; }
+  for (let i = 0; i < n / 2; i++) { cs[i] = Math.cos(TAU * i / n); sn[i] = Math.sin(TAU * i / n); }
+  return function (re, im, inv) { // in-place complex FFT
+    for (let i = 0; i < n; i++) { const j = rev[i]; if (j > i) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+    for (let size = 2; size <= n; size <<= 1) {
+      const h = size >> 1, st = n / size;
+      for (let s = 0; s < n; s += size) for (let k = 0; k < h; k++) {
+        const c = cs[k * st], d = inv ? sn[k * st] : -sn[k * st];
+        const a = s + k, b = a + h, tr = re[b] * c - im[b] * d, ti = re[b] * d + im[b] * c;
+        re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+      }
+    }
+  };
+}
+const F512 = makeFFT(512), F1024 = makeFFT(1024);
+// DFT tables for n=480 (noise)
+const N480 = 480, K241 = 241, C480 = new Float32Array(N480), S480 = new Float32Array(N480);
+for (let i = 0; i < N480; i++) { C480[i] = Math.cos(TAU * i / N480); S480[i] = Math.sin(TAU * i / N480); }
+const HANN480 = new Float32Array(N480); for (let i = 0; i < N480; i++) HANN480[i] = 0.5 - 0.5 * Math.cos(TAU * i / N480);
+
+// ir: Float32Array [512*T] (channel-major), ap: [240*T], pf: [512*T], hz: [T], win: [512]
+// rnd: () => [0,1)
+function cloverSynth(ir, ap, pf, hz, T, win, rnd = Math.random) {
+  const H = 240, N = T * H, sr = 24000;
+  // ---- periodic: pitch-synchronous overlap-add
+  const per = new Float32Array(N + 512);
+  const re = new Float64Array(512), im = new Float64Array(512);
+  let ph = rnd(), prev = ph % 1;
+  for (let i = 0; i < N - 1; i++) {
+    const cur = (ph + hz[((i + 1) / H) | 0] / sr) % 1; ph = cur;
+    if (prev > cur) {
+      const numer = 1 - prev, frac = numer / (numer + cur), t = (i / H) | 0;
+      re.fill(0); im.fill(0);
+      for (let k = 0; k <= 256; k++) {
+        const amp = Math.exp(ir[k * T + t]);
+        let p = (k === 0 || k === 256) ? 0 : ir[(256 + k) * T + t];
+        if (k & 1) p += Math.PI;
+        p += -TAU / 512 * k * frac;
+        re[k] = amp * Math.cos(p); im[k] = amp * Math.sin(p);
+        if (k > 0 && k < 256) { re[512 - k] = re[k]; im[512 - k] = -im[k]; }
+      }
+      im[0] = 0; im[256] = 0;
+      F512(re, im, true);
+      for (let n = 0; n < 512; n++) per[i + n] += re[n] / 512 * win[n];
+    }
+    prev = cur;
+  }
+  // ---- aperiodic: filtered noise
+  const ex = new Float32Array((T + 1) * H); for (let i = 0; i < ex.length; i++) ex[i] = rnd() - 0.5;
+  const nz = new Float32Array((T + 1) * H);
+  const sr_ = new Float64Array(K241), si_ = new Float64Array(K241);
+  for (let t = 0; t < T; t++) {
+    const o = t * H;
+    for (let k = 1; k < K241; k++) {
+      let a = 0, b = 0, idx = 0;
+      for (let n = 0; n < N480; n++) { const x = ex[o + n]; a += x * C480[idx]; b -= x * S480[idx]; idx += k; if (idx >= N480) idx -= N480; }
+      const g = ap[(k - 1) * T + t]; sr_[k] = a * g; si_[k] = b * g;
+    }
+    for (let n = 0; n < N480; n++) {
+      let v = sr_[240] * ((n & 1) ? -1 : 1), idx = n;
+      for (let k = 1; k < 240; k++) { v += 2 * (sr_[k] * C480[idx] - si_[k] * S480[idx]); idx += n; if (idx >= N480) idx -= N480; }
+      nz[o + n] += v / N480 * HANN480[n];
+    }
+  }
+  // ---- post filter (per frame, linear conv with 512-tap filter) on periodic+aperiodic
+  const out = new Float32Array((T - 1) * H + 1024);
+  const fr = new Float64Array(1024), fi = new Float64Array(1024), xr = new Float64Array(1024), xi = new Float64Array(1024);
+  for (let t = 0; t < T; t++) {
+    fr.fill(0); fi.fill(0); xr.fill(0); xi.fill(0);
+    for (let n = 0; n < 512; n++) fr[n] = pf[n * T + t] + (n === 0 ? 1 : 0);
+    for (let n = 0; n < H; n++) xr[n] = per[t * H + n] + nz[t * H + n];
+    F1024(fr, fi, false); F1024(xr, xi, false);
+    for (let k = 0; k < 1024; k++) { const a = xr[k] * fr[k] - xi[k] * fi[k], b = xr[k] * fi[k] + xi[k] * fr[k]; xr[k] = a; xi[k] = b; }
+    F1024(xr, xi, true);
+    for (let n = 0; n < 751; n++) out[t * H + n] += xr[n] / 1024;
+  }
+  return out.subarray(120, 120 + N);
+}
+
+let clover = null, cloverLoading = null, cloverOrt = null;
+function idb(){ return new Promise((ok, ng) => { const r = indexedDB.open('luna-models', 1); r.onupgradeneeded = () => r.result.createObjectStore('m'); r.onsuccess = () => ok(r.result); r.onerror = () => ng(r.error); }); }
+async function idbGet(k){ const db = await idb(); return new Promise((ok, ng) => { const q = db.transaction('m').objectStore('m').get(k); q.onsuccess = () => ok(q.result); q.onerror = () => ng(q.error); }); }
+async function idbPut(k, v){ const db = await idb(); return new Promise((ok, ng) => { const t = db.transaction('m', 'readwrite'); t.objectStore('m').put(v, k); t.oncomplete = () => ok(); t.onerror = () => ng(t.error); }); }
+function setCloverStat(t){ const e = $('#cloverStat'); if (e) e.textContent = t; }
+async function ensureClover(bytes){
+  if (clover && !bytes) return clover;
+  if (cloverLoading && !bytes) return cloverLoading;
+  cloverLoading = (async () => {
+    let buf = bytes || await idbGet('clover').catch(() => null);
+    if (!buf){ try { const r = await fetch('./clover_front.onnx'); if (r.ok) buf = await r.arrayBuffer(); } catch(e){} }
+    if (!buf){ setCloverStat('未読み込み'); return null; }
+    setCloverStat('準備中…');
+    cloverOrt = cloverOrt || await import('onnxruntime-web');
+    const sess = await cloverOrt.InferenceSession.create(new Uint8Array(buf), { executionProviders: ['wasm'] });
+    if (bytes) await idbPut('clover', buf).catch(() => {});
+    clover = sess; setCloverStat('使えます');
+    clipCache.clear();
+    if (neuralReady) for (const w of AIZUCHI.concat(FILLERS)) synthClip(w).catch(() => {});
+    return clover;
+  })();
+  try { return await cloverLoading; }
+  catch(e){ setCloverStat('読み込み失敗'); console.warn(e); return null; }
+  finally { cloverLoading = null; }
+}
+
+/* ---- Live2Dキャラ(配布モデルを読み込んで動かす) ---- */
+const L2D_CDN = {
+  core: 'https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js',
+  pixi: 'https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js',
+  l2d: 'https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js',
+  zip: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'
+};
+function loadScript(src){ return new Promise((ok, ng) => { if ([...document.scripts].some(s => s.src === src)) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => ng(new Error('読み込めませんでした: ' + src)); document.head.appendChild(s); }); }
+let l2dApp = null, l2dModel = null, l2dUrls = [], l2dMouthIds = ['ParamMouthOpenY'], outAnalyser = null, outLvl = new Float32Array(512);
+function outNode(){
+  const ctx = ensureOutCtx();
+  if (!outAnalyser){ outAnalyser = ctx.createAnalyser(); outAnalyser.fftSize = 512; outAnalyser.connect(ctx.destination); }
+  return outAnalyser;
+}
+function outLevel(){
+  if (!outAnalyser) return 0;
+  outAnalyser.getFloatTimeDomainData(outLvl); let s = 0; for (let i = 0; i < outLvl.length; i++) s += outLvl[i] * outLvl[i];
+  return Math.sqrt(s / outLvl.length);
+}
+function setL2dStat(t){ const e = $('#l2dStat'); if (e) e.textContent = t; }
+async function l2dLibs(needZip){
+  await loadScript(L2D_CDN.core); await loadScript(L2D_CDN.pixi); await loadScript(L2D_CDN.l2d);
+  if (needZip) await loadScript(L2D_CDN.zip);
+}
+// 入力: [{path, blob}] → 保存用に正規化
+async function filesFromInput(list){
+  const out = [];
+  for (const f of list){
+    if (/\.zip$/i.test(f.name)){
+      await l2dLibs(true);
+      const z = await JSZip.loadAsync(f);
+      for (const [p, e] of Object.entries(z.files)) if (!e.dir && !/__MACOSX|\/\._/.test(p)) out.push({ path: p, blob: await e.async('blob') });
+    } else out.push({ path: f.webkitRelativePath || f.name, blob: f });
+  }
+  return out;
+}
+async function buildL2d(files){
+  const mf = files.filter(f => /\.model3\.json$/i.test(f.path)).sort((a, b) => a.path.length - b.path.length)[0];
+  if (!mf) throw new Error('model3.json が見つからない(Cubism 3以降のモデルに対応しています)');
+  const dir = mf.path.includes('/') ? mf.path.slice(0, mf.path.lastIndexOf('/') + 1) : '';
+  const norm = p => { const a = []; for (const s of p.split('/')) { if (s === '..') a.pop(); else if (s && s !== '.') a.push(s); } return a.join('/'); };
+  const map = new Map(files.map(f => [norm(f.path).toLowerCase(), f.blob]));
+  l2dUrls.forEach(u => URL.revokeObjectURL(u)); l2dUrls = [];
+  const url = p => { const b = map.get(norm(dir + p).toLowerCase()); if (!b) return p; const u = URL.createObjectURL(b); l2dUrls.push(u); return u; };
+  const json = JSON.parse(await mf.blob.text()); const R = json.FileReferences || {};
+  for (const k of ['Moc', 'Physics', 'Pose', 'UserData', 'DisplayInfo']) if (R[k]) R[k] = url(R[k]);
+  if (R.Textures) R.Textures = R.Textures.map(url);
+  if (R.Expressions) R.Expressions.forEach(e => e.File = url(e.File));
+  if (R.Motions) for (const g of Object.values(R.Motions)) g.forEach(m => { m.File = url(m.File); if (m.Sound) delete m.Sound; });
+  const lip = (json.Groups || []).find(g => g.Name === 'LipSync');
+  l2dMouthIds = lip && lip.Ids && lip.Ids.length ? lip.Ids : ['ParamMouthOpenY'];
+  json.url = location.href;
+  return json;
+}
+function fitL2d(){
+  if (!l2dApp || !l2dModel) return;
+  const st = $('#stage'), w = st.clientWidth, h = st.clientHeight;
+  l2dApp.renderer.resize(w, h);
+  const m = l2dModel; m.scale.set(1);
+  const base = Math.min(w / m.width, h / m.height) * (S.l2dScale || 1);
+  m.scale.set(base);
+  m.x = (w - m.width) / 2;
+  m.y = (S.l2dScale || 1) > 1.05 ? h * 0.03 + (S.l2dY || 0) / 100 * h : h - m.height + (S.l2dY || 0) / 100 * h;
+}
+async function startL2d(files){
+  setL2dStat('読み込み中…');
+  await l2dLibs(false);
+  const json = await buildL2d(files);
+  if (!l2dApp){
+    const cv = document.createElement('canvas'); cv.id = 'l2dCanvas'; $('#stage').appendChild(cv);
+    l2dApp = new PIXI.Application({ view: cv, backgroundAlpha: 0, autoStart: true, antialias: true, resolution: Math.min(2, devicePixelRatio || 1), autoDensity: true });
+    addEventListener('resize', fitL2d);
+    $('#stage').addEventListener('pointermove', e => { if (l2dModel) l2dModel.focus(e.clientX, e.clientY); });
+  }
+  if (l2dModel){ l2dApp.stage.removeChild(l2dModel); l2dModel.destroy(); l2dModel = null; }
+  const MS = PIXI.live2d.ModelSettings.prototype;
+  if (!MS._blobFix){ const o = MS.resolveURL; MS.resolveURL = function(p){ return /^(blob|data):/.test(p) ? p : o.call(this, p); }; MS._blobFix = true; }
+  const m = await PIXI.live2d.Live2DModel.from(json, { autoInteract: false });
+  l2dModel = m; l2dApp.stage.addChild(m);
+  m.interactive = true;
+  m.on('pointertap', () => { const g = m.internalModel.settings.motions || {}; const k = Object.keys(g).find(n => /tap/i.test(n)) || Object.keys(g).find(n => !/idle/i.test(n)); if (k) m.motion(k); });
+  let mouth = 0;
+  m.internalModel.on('beforeModelUpdate', () => {
+    let target = 0;
+    const lv = outLevel();
+    if (lv > 0.004) target = Math.min(1, lv * 9);
+    else if (document.body.classList.contains('mouth')) target = 0.8;
+    else if (document.body.classList.contains('mouth-i')) target = 0.4;
+    mouth += (target - mouth) * (target > mouth ? 0.6 : 0.3);
+    const cm = m.internalModel.coreModel;
+    for (const id of l2dMouthIds) try { cm.setParameterValueById(id, mouth); } catch(e){}
+  });
+  document.body.classList.add('l2d');
+  requestAnimationFrame(fitL2d); setTimeout(fitL2d, 300);
+  setL2dStat('表示中');
+}
+async function initL2d(){
+  if (S.avatar !== 'live2d'){ document.body.classList.remove('l2d'); if (l2dApp) l2dApp.stop(); return; }
+  if (l2dModel){ document.body.classList.add('l2d'); l2dApp.start(); fitL2d(); return; }
+  const files = await idbGet('live2d').catch(() => null);
+  if (!files){ setL2dStat('未読み込み'); return; }
+  try { await startL2d(files); } catch(e){ console.warn(e); setL2dStat('表示できなかった'); toast('Live2Dモデルを表示できなかった: ' + e.message); }
+}
+async function onL2dFiles(list){
+  if (!list || !list.length) return;
+  try {
+    setL2dStat('読み込み中…');
+    const files = await filesFromInput([...list]);
+    await startL2d(files);
+    await idbPut('live2d', files).catch(() => toast('モデルが大きくて端末に保存できなかった(今回だけ表示します)'));
+    S.avatar = 'live2d'; saveSettings(); const sel = $('#s_avatar'); if (sel) sel.value = 'live2d';
+    toast('Live2Dキャラを読み込んだよ');
+  } catch(e){ console.warn(e); setL2dStat('表示できなかった'); toast('Live2Dモデルを読み込めなかった: ' + e.message); }
+}
+document.addEventListener('change', e => {
+  if (e.target && (e.target.id === 'l2dZip' || e.target.id === 'l2dDir')){ onL2dFiles(e.target.files); e.target.value = ''; }
+});
+document.addEventListener('click', e => {
+  if (!e.target) return;
+  if (e.target.id === 'l2dZipBtn') $('#l2dZip').click();
+  if (e.target.id === 'l2dDirBtn') $('#l2dDir').click();
+});
+
+setTimeout(() => initL2d(), 0);
+window.__l2dApp = () => l2dApp;
+window.__cloverTest = (s, r) => cloverConvert(s, r);
+async function cloverConvert(samples, rate){
+  const len16 = Math.ceil(samples.length * 16000 / rate), n = Math.ceil(len16 / 640) * 640;
+  const off = new OfflineAudioContext(1, n, 16000);
+  const b = off.createBuffer(1, samples.length, rate); b.copyToChannel(samples, 0);
+  const src = off.createBufferSource(); src.buffer = b; src.connect(off.destination); src.start();
+  const wav = (await off.startRendering()).getChannelData(0);
+  const T = cloverOrt.Tensor, N = clover.outputNames;
+  const o = await clover.run({ wav: new T('float32', wav, [1, 1, n]), pitch_shift: new T('float32', [S.cloverPitch || 0], [1]), formant_shift: new T('float32', [0], [1]) });
+  const y = cloverSynth(o[N[0]].data, o[N[1]].data, o[N[2]].data, o[N[3]].data, o[N[3]].dims[1], o[N[4]].data);
+  const out = y.slice(0, Math.min(y.length, Math.ceil(len16 * 1.5)));
+  let pk = 0; for (let i = 0; i < out.length; i++) pk = Math.max(pk, Math.abs(out[i]));
+  if (pk > 0.99) for (let i = 0; i < out.length; i++) out[i] *= 0.99 / pk;
+  return out;
+}
 function synthClip(text){
   if (clipCache.has(text)) return clipCache.get(text);
   const p = (async () => {
     const a = await piper.synthesize(text, { lengthScale: 1 / Math.max(0.7, Math.min(1.6, S.rate)) });
     const ctx = ensureOutCtx();
+    if (S.voiceEngine === 'clover' && clover){
+      try {
+        const y = await cloverConvert(a.samples, a.sampleRate);
+        const cb = ctx.createBuffer(1, y.length, 24000); cb.copyToChannel(y, 0); return cb;
+      } catch(e){ console.warn('clover', e); }
+    }
     const buf = ctx.createBuffer(1, a.samples.length, a.sampleRate);
     buf.copyToChannel(a.samples, 0);
     return buf;
@@ -846,7 +1134,7 @@ function synthClip(text){
 }
 function playBuf(buf, onend){
   const ctx = ensureOutCtx();
-  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
+  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(outNode());
   if (onend) src.onended = onend;
   src.start();
   return src;
@@ -999,8 +1287,30 @@ function onTtsDrained(){
     else setState('thinking');
   }
 }
+const TASK_RE = /(作って|つくって|書いて|かいて|まとめて|調べて|しらべて|検索して|ググって|考えて|かんがえて|作成して|翻訳して|訳して|リストにして|計画を立てて|プランを立てて|レシピを教えて|コードを|プログラムを|メールを|文章を|比べて|くらべて)/;
+function detectTask(text){
+  const t = text.replace(/\s/g, '');
+  if (t.length < 6 || !TASK_RE.test(t)) return false;
+  if (/(って|とは)(何|なに|なん|誰|だれ)/.test(t) && !/(調べて|検索|詳しく|くわしく|まとめて)/.test(t)) return false;
+  return true;
+}
+function handOffToAssist(text){
+  if (gen) abortGen(gen);
+  const holder = { id: ++genSeq, spoken:[], el:null };
+  const line = /調べ|検索|ググ/.test(text) ? 'わかった、調べて画面に出すね。ちょっと待ってて。' : 'わかった、作って画面に出すね。ちょっと待ってて。';
+  ttsEnqueue(line, holder);
+  setState('thinking');
+  setTimeout(async () => {
+    const wait = Date.now(); while ((ttsBusy || ttsQueue.length) && Date.now() - wait < 8000) await new Promise(r => setTimeout(r, 150));
+    openAssist(); asNew(); $('#asInput').value = text;
+    await asSend();
+    const last = asCur && asCur.msgs[asCur.msgs.length - 1];
+    if (last && last.role === 'assistant' && !/^⚠️/.test(last.content) && $('#assist').classList.contains('open')) speakLong('できたよ！画面に出しておいたから見てね。');
+  }, 50);
+}
 function commitUser(text){
   pushHistory('user', text); addMsg('user', text); clearRec(false);
+  if (detectTask(text)){ handOffToAssist(text); return; }
   const q = S.search ? detectQuery(text) : null;
   if (q){
     // 調べものが必要 → 推測で答えさせず、先に「調べるね」と言ってから結果つきで返事を作る
@@ -1306,6 +1616,7 @@ try { asChats = JSON.parse(localStorage.getItem(AS_KEY) || '[]'); } catch(e){ as
 const AS_TEMPLATES = [
   ['✉️', 'メールを書く', '次の内容で、ていねいなメールを書いて。\n相手:\n用件:'],
   ['📝', '文章を要約する', '次の文章を、大事なところだけ3行で要約して。\n\n'],
+  ['🔎', '調べてまとめる', '次のことを調べて、わかりやすくまとめて。\n調べたいこと:'],
   ['🌏', '翻訳する', '次の文章を自然な英語に翻訳して。\n\n'],
   ['💡', 'アイデアを出す', '〇〇のアイデアを10個出して。'],
   ['🎤', '自己PRを作る', '就職活動で使う自己PRを400字で作って。\n私の経験:'],
@@ -1315,7 +1626,7 @@ const AS_TEMPLATES = [
 ];
 const EXT = { javascript:'js', js:'js', typescript:'ts', ts:'ts', python:'py', py:'py', html:'html', css:'css', java:'java', c:'c', cpp:'cpp', 'c++':'cpp', csharp:'cs', 'c#':'cs', cs:'cs', json:'json', bash:'sh', sh:'sh', shell:'sh', powershell:'ps1', ps1:'ps1', sql:'sql', go:'go', rust:'rs', kotlin:'kt', swift:'swift', php:'php', ruby:'rb', markdown:'md', md:'md', xml:'xml', yaml:'yml', yml:'yml', lua:'lua' };
 function asSave(){
-  try { localStorage.setItem(AS_KEY, JSON.stringify(asChats.slice(0, 60), (k, v) => (k === 'imgs' || k === 'b64') ? undefined : v)); }
+  try { localStorage.setItem(AS_KEY, JSON.stringify(asChats.slice(0, 60), (k, v) => (k === 'imgs' || k === 'b64' || k === 'aug') ? undefined : v)); }
   catch(e){ toast('保存できる量をこえたので、古い会話を消してね'); }
 }
 async function loadMd(){
@@ -1394,6 +1705,11 @@ function asMsgEl(m, i){
     const body = document.createElement('div'); body.className = 'asBody md';
     renderMd(body, m.content || ''); decorateCode(body);
     d.appendChild(body);
+    if (m.sources && m.sources.length){
+      const sc = document.createElement('div'); sc.className = 'asSrc';
+      m.sources.forEach((x, k) => { const a = document.createElement('a'); a.href = x.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = `[${k + 1}] ${x.title}`; sc.appendChild(a); });
+      d.appendChild(sc);
+    }
     const tools = document.createElement('div'); tools.className = 'asTools';
     const mk = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.onclick = fn; tools.appendChild(b); return b; };
     const cpb = mk('コピー', () => copyText(m.content, cpb));
@@ -1450,6 +1766,75 @@ function asAddImage(file){
   };
   img.src = u;
 }
+
+/* ---- 調べもの(Wikipedia+指定URL・キー不要) ---- */
+const RESEARCH_RE = /(調べ|検索|ググ|とは|について|最新|ニュース|比較|違い|歴史|由来|いつ|誰が|だれが|どこで|何年|理由|仕組み|しくみ|原因|特徴|https?:\/\/)/;
+async function ollamaQuick(prompt, ms){
+  const model = S.ollamaModel || 'gemma3:1b';
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), ms || 20000);
+  try {
+    const r = await fetch(S.ollamaUrl.replace(/\/$/, '') + '/api/generate', { method: 'POST', signal: ctl.signal,
+      body: JSON.stringify({ model, prompt, stream: false, keep_alive: '30m', options: { num_predict: 60, temperature: 0.2 } }) });
+    if (!r.ok) return null; return (await r.json()).response || null;
+  } catch(e){ return null; } finally { clearTimeout(tm); }
+}
+function heuristicKeywords(q){
+  let t = q.replace(/https?:\/\/\S+/g, ' ').replace(/[「」『』"'（）()]/g, ' ');
+  t = t.replace(/(について|に関して|のことを|のこと|を)?(詳しく|くわしく|わかりやすく|簡単に)?(調べて|検索して|ググって|教えて|まとめて|説明して|知りたい)(ください|ほしい|欲しい|くれる|ね|よ|！|!|。)*/g, ' ');
+  t = t.replace(/(とは|って)(何|なに|なん)(ですか|なの|か)?[？?]?/g, ' ').replace(/[？?！!。、]/g, ' ').trim();
+  const parts = t.split(/\s+|と|や|、/).filter(s => s.length >= 2).slice(0, 3);
+  return parts.length ? parts : [t || q];
+}
+async function researchKeywords(q){
+  if (S.aiEngine !== 'browser' && ollamaOK !== false){
+    const r = await ollamaQuick(`次の質問に答えるために百科事典で調べるべき検索語を、最大3つ、1行に1つずつ書いて。検索語だけを書くこと。\n質問: ${q}\n検索語:`, 15000);
+    if (r){
+      const ks = r.split(/\n|、|,/).map(s => s.replace(/^[\s\-・*\d.)]+/, '').replace(/[「」"]/g, '').trim()).filter(s => s.length >= 2 && s.length <= 30).slice(0, 3);
+      if (ks.length) return ks;
+    }
+  }
+  return heuristicKeywords(q);
+}
+async function wikiSearch(lang, k, n){
+  const base = `https://${lang}.wikipedia.org`;
+  const s = await fetch(`${base}/w/api.php?action=query&list=search&srlimit=${n}&format=json&origin=*&srsearch=${encodeURIComponent(k)}`).then(r => r.json());
+  return ((s.query && s.query.search) || []).map(h => ({ lang, title: h.title }));
+}
+async function wikiText(lang, title, chars){
+  const base = `https://${lang}.wikipedia.org`;
+  const j = await fetch(`${base}/w/api.php?action=query&prop=extracts&explaintext=1&exsectionformat=plain&redirects=1&format=json&origin=*&titles=${encodeURIComponent(title)}`).then(r => r.json());
+  const p = Object.values((j.query && j.query.pages) || {})[0];
+  const txt = ((p && p.extract) || '').replace(/\n{2,}/g, '\n').slice(0, chars);
+  return txt ? { title: (p.title || title) + (lang === 'en' ? '(英語版)' : ''), url: `${base}/wiki/${encodeURIComponent((p.title || title).replace(/ /g, '_'))}`, text: txt } : null;
+}
+async function readUrl(u, chars){
+  try {
+    const r = await fetch('https://r.jina.ai/' + u, { headers: { 'Accept': 'text/plain' } });
+    if (!r.ok) return null;
+    const t = (await r.text()).slice(0, chars);
+    const tm = t.match(/^Title:\s*(.+)$/m);
+    return { title: tm ? tm[1].trim() : u, url: u, text: t };
+  } catch(e){ return null; }
+}
+async function research(q, onStep, big){
+  const per = big ? 2500 : 1100, maxSrc = big ? 5 : 3, out = [];
+  const urls = (q.match(/https?:\/\/[^\s「」<>"]+/g) || []).slice(0, 2);
+  if (urls.length){ onStep && onStep('🔗 ページを読んでいます…'); for (const u of urls){ const r = await readUrl(u, per * 2); if (r) out.push(r); } }
+  const ks = await researchKeywords(q);
+  onStep && onStep('🔎 「' + ks.join('」「') + '」を調べています…');
+  const seen = new Set(); let hits = [];
+  for (const k of ks){ try { for (const h of await wikiSearch('ja', k, 2)) if (!seen.has(h.title)){ seen.add(h.title); hits.push(h); } } catch(e){} }
+  if (hits.length < 2) for (const k of ks){ try { for (const h of await wikiSearch('en', k, 1)) if (!seen.has(h.title)){ seen.add(h.title); hits.push(h); } } catch(e){} }
+  hits = hits.slice(0, Math.max(0, maxSrc - out.length));
+  onStep && onStep('📖 ' + hits.length + '件の記事を読んでいます…');
+  const texts = await Promise.all(hits.map(h => wikiText(h.lang, h.title, per).catch(() => null)));
+  return out.concat(texts.filter(Boolean));
+}
+function sourcesPrompt(q, src){
+  if (!src || !src.length) return q + '\n\n(調べてみたが資料が見つからなかった。知っている範囲で答え、確かでない点ははっきりそう書くこと。)';
+  return '次の【資料】を読んで、質問に答えて。資料にある内容を優先し、使った資料の番号を文中に[1]のように付ける。資料にないことを書くときは、そう分かるように書く。\n\n' +
+    src.map((s, i) => `【資料${i + 1}】${s.title}\n${s.text}`).join('\n\n') + '\n\n【質問】' + q;
+}
 function asSystem(){
   return `あなたは${S.name}。ユーザーのための、かしこくて親切な日本語アシスタント。質問には正確に答え、頼まれたもの(文章・コード・アイデアなど)はそのまま使える完成した形で作る。見出し・箇条書き・表・コードブロックなどMarkdownを使って読みやすくする。分からないことや自信のないことは正直にそう言う。`;
 }
@@ -1473,7 +1858,7 @@ async function* asStream(chat){
     asShowModel(model + '(PC)');
     asNote(model !== S.smartModel && !/12b|4b|8b/.test(model) ? `かしこいAIがまだ入っていないので「${model}」で答えるね。PowerShellで ollama pull ${S.smartModel} を実行すると、もっとかしこくなるよ` : '');
     const msgs = [{ role: 'system', content: asSystem() }].concat(hist.map(m => {
-      const o = { role: m.role, content: m.content }; if (m.b64 && m.b64.length) o.images = m.b64; return o;
+      const o = { role: m.role, content: m.aug || m.content }; if (m.b64 && m.b64.length) o.images = m.b64; return o;
     }));
     asCtl = new AbortController();
     const res = await fetch(S.ollamaUrl.replace(/\/$/, '') + '/api/chat', { method: 'POST', signal: asCtl.signal,
@@ -1498,7 +1883,8 @@ async function* asStream(chat){
   asShowModel('ブラウザの中のAI(簡易)');
   asNote('PCでOllamaを使うと、もっとかしこく速く答えられるよ');
   const eng = await ensureEngine();
-  const msgs = hist.map(m => ({ role: m.role, content: m.content }));
+  const msgs = hist.slice(-4).map(m => ({ role: m.role, content: m.aug || m.content }));
+  while (msgs.length > 1 && msgs[0].role !== 'user') msgs.shift();
   msgs[0] = { role: 'user', content: asSystem() + '\n\n' + msgs[0].content };
   const req = { messages: msgs, stream: true, max_tokens: 1024, temperature: 0.6 };
   if (/^Qwen/.test(engineModel)) req.extra_body = { enable_thinking: false };
@@ -1516,6 +1902,8 @@ async function asSend(){
   if (!asCur) asNew();
   const m = { role: 'user', content: text || 'この画像について、わかることを教えて。' };
   if (asImages.length){ m.imgs = asImages.map(x => x.url); m.b64 = asImages.map(x => x.b64); m.hadImg = true; }
+  const mode = S.asWeb || 'auto';
+  m.research = mode === 'on' || (mode === 'auto' && RESEARCH_RE.test(m.content) && !m.b64);
   asCur.msgs.push(m);
   if (asCur.title === '新しい会話') asCur.title = m.content.replace(/\s+/g, ' ').slice(0, 24);
   ta.value = ''; asAutoGrow(); asImages = []; asRenderImgs();
@@ -1531,6 +1919,14 @@ async function asGenerate(){
   let last = 0;
   try {
     await loadMd();
+    const um = chat.msgs[chat.msgs.length - 2];
+    if (um && um.role === 'user' && um.research){
+      const big = S.aiEngine !== 'browser' && !!(await pickSmartModel());
+      const src = await research(um.content, t => { if (asCur === chat) el.innerHTML = '<div class="hint">' + t.replace(/</g, '&lt;') + '</div><span class="typing"><i></i><i></i><i></i></span>'; }, big);
+      um.aug = sourcesPrompt(um.content, src);
+      out.sources = src.map(x => ({ title: x.title, url: x.url }));
+      if (!asBusy) throw Object.assign(new Error('stop'), { name: 'AbortError' });
+    }
     for await (const t of asStream(chat)){
       out.content += t;
       if (asCur === chat && performance.now() - last > 90){
@@ -1580,6 +1976,9 @@ function openAssist(){
 }
 function closeAssist(){ if (asBusy) asStop(); stopSpeakLong(); $('#assist').classList.remove('open'); }
 $('#assistBtn').onclick = openAssist;
+function asWebUpd(){ const b = $('#asWeb'), m = S.asWeb || 'auto'; b.className = m; b.title = { auto:'調べる:自動(調べものっぽい質問だけ調べる)', on:'調べる:いつも調べてから答える', off:'調べる:調べない' }[m]; }
+$('#asWeb').onclick = () => { const m = S.asWeb || 'auto'; S.asWeb = m === 'auto' ? 'on' : m === 'on' ? 'off' : 'auto'; saveSettings(); asWebUpd(); toast({ auto:'🔎 自動:調べものっぽい質問のときだけ調べるよ', on:'🔎 オン:いつも調べてから答えるよ', off:'🔎 オフ:調べずに答えるよ' }[S.asWeb]); };
+asWebUpd();
 $('#asBack').onclick = closeAssist;
 $('#asMenu').onclick = () => $('#asSide').classList.toggle('open');
 $('#asNewBtn').onclick = asNew;
@@ -1663,7 +2062,7 @@ function sendText(){
 }
 
 /* ============ 設定画面 ============ */
-const FIELDS = ['aiEngine','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','persona','voiceURI','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
+const FIELDS = ['aiEngine','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','persona','voiceURI','cloverPitch','avatar','l2dScale','l2dY','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
 function openSettings(){
   for (const k of FIELDS){
     const el = $('#s_' + k); if (!el) continue;
@@ -1671,7 +2070,15 @@ function openSettings(){
   }
   updateVals(); $('#settings').classList.add('open');
 }
-function updateVals(){ ['rate','pitch','endMs','sens','barge'].forEach(k => { $('#v_' + k).textContent = $('#s_' + k).value; }); }
+document.addEventListener('click', e => { if (e.target && e.target.id === 'cloverPick') $('#cloverFile').click(); });
+document.addEventListener('change', async e => {
+  if (!e.target || e.target.id !== 'cloverFile' || !e.target.files[0]) return;
+  const f = e.target.files[0]; setCloverStat('読み込み中…');
+  const r = await ensureClover(await f.arrayBuffer());
+  if (r){ toast('Clover声を読み込んだよ'); $('#s_voiceEngine').value = 'clover'; } else toast('モデルを読み込めなかった');
+  e.target.value = '';
+});
+function updateVals(){ ['rate','pitch','endMs','sens','barge','cloverPitch','l2dScale','l2dY'].forEach(k => { $('#v_' + k).textContent = $('#s_' + k).value; }); }
 function saveFromForm(){
   for (const k of FIELDS){
     const el = $('#s_' + k); if (!el) continue;
@@ -1681,8 +2088,10 @@ function saveFromForm(){
   }
   if (!S.name) S.name = DEFAULTS.name;
   if (!S.persona.trim()) S.persona = DEFAULT_PERSONA;
-  ollamaOK = null;
+  ollamaOK = null; clipCache.clear();
   saveSettings(); applyName();
+  if (S.voiceEngine === 'clover' && neuralReady) ensureClover().catch(() => {});
+  initL2d(); fitL2d();
   $('#settings').classList.remove('open'); toast('保存したよ');
 }
 function applyName(){
@@ -1716,7 +2125,7 @@ $('#gear').onclick = openSettings;
 $('#closeBtn').onclick = () => $('#settings').classList.remove('open');
 $('#saveBtn').onclick = saveFromForm;
 $('#resetBtn').onclick = () => { history = []; saveHistory(); logEl.innerHTML = ''; toast('履歴を消したよ'); };
-['rate','pitch','endMs','sens','barge'].forEach(k => $('#s_' + k).addEventListener('input', updateVals));
+['rate','pitch','endMs','sens','barge','cloverPitch','l2dScale','l2dY'].forEach(k => $('#s_' + k).addEventListener('input', updateVals));
 $('#callBtn').onclick = () => running ? stopCall() : startCall();
 $('#sendBtn').onclick = sendText;
 $('#textIn').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing){ e.preventDefault(); sendText(); } });
