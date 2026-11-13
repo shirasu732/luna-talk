@@ -397,13 +397,14 @@ const DEFAULT_PERSONA =
 const DEFAULTS = {
   model: 'auto', userName: '', setupDone: false,
   name: 'Luna', persona: DEFAULT_PERSONA, voiceURI: '',
-  rate: 1.15, pitch: 1.15, endMs: 750, sens: 2.8, barge: 2.6,
+  rate: 1.1, pitch: 1.35, endMs: 750, sens: 2.8, barge: 2.6,
   aizuchi: true, speculative: true, localStt: false, search: true
 };
 const STORE_KEY = 'hiyori-local-settings';
 const HIST_KEY = 'hiyori-local-history';
 const HIST_TURNS = 12;   // 小さいモデルなので直近だけ覚える(速さ優先)
 let S = loadSettings();
+if (!S.voiceV2){ S.pitch = Math.max(S.pitch, 1.35); S.voiceV2 = true; }
 if (/^あなたは「ひより」/.test(S.persona)) S.persona = DEFAULT_PERSONA;
 function loadSettings(){
   try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); }
@@ -588,12 +589,17 @@ function loadVoices(){
   if (!synth) return;
   voices = synth.getVoices().filter(v => /^ja/i.test(v.lang));
   const sel = $('#s_voiceURI'); sel.innerHTML = '';
-  const o0 = document.createElement('option'); o0.value = ''; o0.textContent = '端末のおまかせ'; sel.appendChild(o0);
+  const o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'おまかせ(かわいい声を自動で選ぶ)'; sel.appendChild(o0);
   for (const v of voices){ const o = document.createElement('option'); o.value = v.voiceURI; o.textContent = v.name; sel.appendChild(o); }
   sel.value = S.voiceURI;
 }
 if (synth){ loadVoices(); synth.onvoiceschanged = loadVoices; }
-function pickVoice(){ return voices.find(v => v.voiceURI === S.voiceURI) || voices[0] || null; }
+const CUTE = [/Nanami/i, /Mayu/i, /Aoi/i, /Google.*日本/i, /Kyoko/i, /O-?ren/i, /Sayaka/i, /Haruka/i, /Ayumi/i];
+function pickVoice(){
+  const v = voices.find(x => x.voiceURI === S.voiceURI); if (v) return v;
+  for (const re of CUTE){ const f = voices.find(x => re.test(x.name)); if (f) return f; }
+  return voices[0] || null;
+}
 function makeUtter(text, opt){
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'ja-JP'; const v = pickVoice(); if (v) u.voice = v;
@@ -660,8 +666,15 @@ async function runGen(g, msgs){
     const req = { messages: msgs, stream: true, max_tokens: 160, temperature: 0.7, top_p: 0.9, frequency_penalty: 0.3 };
     if (/^Qwen/.test(engineModel)) req.extra_body = { enable_thinking: false };
     const chunks = await eng.chat.completions.create(req);
-    for await (const c of chunks){
-      if (g.cancelled) break;
+    const it = chunks[Symbol.asyncIterator]();
+    const stop = new Promise(res => { g.stop = res; });
+    for (;;){
+      let to;
+      const r = await Promise.race([it.next(), stop, new Promise(res => { to = setTimeout(() => res({ timeout: true }), 45000); })]);
+      clearTimeout(to);
+      if (r && r.timeout) throw new Error('AIの返事が止まってしまいました。もう一度話しかけてね');
+      if (g.cancelled || !r || r.done){ try { it.return && it.return(); } catch(_){} break; }
+      const c = r.value;
       const d = c.choices && c.choices[0] && c.choices[0].delta && c.choices[0].delta.content;
       if (d){ g.raw += d; processRaw(g, false); }
     }
@@ -746,6 +759,7 @@ function commitUser(text){
 }
 function abortGen(g){
   g.cancelled = true;
+  if (g.stop) g.stop({ done: true });
   try { engine && engine.interruptGenerate(); } catch(e){}
   if (gen === g) gen = null;
 }
@@ -1002,7 +1016,7 @@ function saveFromForm(){
 function applyName(){
   $('#nameTag').textContent = S.name;
   document.title = S.name + 'とおはなし';
-  $('#welcomeName').textContent = S.name;
+  const w = $('#welcomeName'); if (w) w.textContent = S.name;
 }
 /* 名前を決める画面 */
 function openNaming(first){
