@@ -431,12 +431,12 @@ const DEFAULT_PERSONA =
 const DEFAULTS = {
   model: 'auto', userName: '', setupDone: false,
   name: 'Luna', persona: DEFAULT_PERSONA, voiceURI: '',
-  rate: 1.1, pitch: 1.35, endMs: 750, sens: 2.8, barge: 2.6,
+  rate: 1.1, pitch: 1.35, endMs: 650, sens: 2.8, barge: 2.6,
   aizuchi: true, speculative: true, localStt: false, search: true
 };
 const STORE_KEY = 'hiyori-local-settings';
 const HIST_KEY = 'hiyori-local-history';
-const HIST_TURNS = 12;   // 小さいモデルなので直近だけ覚える(速さ優先)
+const HIST_TURNS = 6;   // 小さいモデルなので直近だけ覚える(速さ優先)
 let S = loadSettings();
 if (!S.voiceV2){ S.pitch = Math.max(S.pitch, 1.35); S.voiceV2 = true; }
 if (/^あなたは「ひより」/.test(S.persona)) S.persona = DEFAULT_PERSONA;
@@ -682,7 +682,7 @@ const pendingResults = [];
 
 function startGen(userText, committed, memo){
   const g = { id: ++genSeq, raw:'', consumed:0, pending:[], committed, cancelled:false,
-              done:false, spoken:[], userText, firstOut:false, finalized:false, el:null };
+              done:false, spoken:[], userText, firstOut:false, finalized:false, el:null, t0: now(), filler:false };
   gen = g;
   const extra = userText != null ? [{ role:'user', content:userText }] : [];
   let msgs = buildMessages(extra, memo);
@@ -699,7 +699,7 @@ async function runGen(g, msgs){
   try {
     const eng = await ensureEngine();
     if (g.cancelled) return;
-    const req = { messages: msgs, stream: true, max_tokens: 160, temperature: 0.7, top_p: 0.9, frequency_penalty: 0.3 };
+    const req = { messages: msgs, stream: true, max_tokens: 90, temperature: 0.7, top_p: 0.9, frequency_penalty: 0.3 };
     if (/^Qwen/.test(engineModel)) req.extra_body = { enable_thinking: false };
     const chunks = await eng.chat.completions.create(req);
     const it = chunks[Symbol.asyncIterator]();
@@ -784,7 +784,7 @@ function commitUser(text){
     return;
   }
   if (gen && !gen.committed){
-    const g = gen; g.committed = true; setState('thinking');
+    const g = gen; g.committed = true; g.t0 = now(); setState('thinking');
     const p = g.pending; g.pending = [];
     p.forEach(s => ttsEnqueue(s, g));
     if (g.done && !ttsBusy && !ttsQueue.length) finalizeGen(g, false);
@@ -896,6 +896,13 @@ function doAizuchi(){
   document.body.classList.remove('nod'); void document.body.offsetWidth; document.body.classList.add('nod');
   setTimeout(() => { b.classList.remove('show'); document.body.classList.remove('nod'); }, 900);
 }
+const FILLERS = ['えっとね、', 'んー、', 'そうだなあ、', 'あのね、'];
+function sayFiller(){
+  const w = FILLERS[Math.floor(Math.random() * FILLERS.length)];
+  aizuchiUntil = now() + 500 + w.length * 160;
+  recentSpoken = (recentSpoken + w).slice(-80);
+  try { synth.speak(makeUtter(w, { rate: S.rate })); } catch(e){}
+}
 function tick(){
   const t = now();
   const level = readLevel();
@@ -958,6 +965,11 @@ function tick(){
     }
   }
 
+  // --- 返事が遅いときは、つなぎの一言で待たせない ---
+  if (gen && gen.committed && !gen.firstOut && !gen.filler && !ttsBusy && t - gen.t0 > 600 && t > aizuchiUntil){
+    gen.filler = true; sayFiller();
+  }
+
   // --- 調べ物の結果を、話が途切れたタイミングで伝える ---
   if (pendingResults.length && !gen && !ttsBusy && !text && t - lastVoiceTime > 1500 && t - lastResultTime > 1500){
     deliverResult();
@@ -966,7 +978,7 @@ function tick(){
 
 /* ============ マイクの確認画面 ============ */
 let mc = { stream:null, ctx:null, an:null, buf:null, raf:0, rec:null };
-function curTrack(){ return mediaStream ? mediaStream.getAudioTracks()[0] : undefined; }
+function curTrack(){ return (S.micId && mediaStream) ? mediaStream.getAudioTracks()[0] : undefined; }
 function micConstraints(){
   const a = { echoCancellation:true, noiseSuppression:true, autoGainControl:true };
   if (S.micId) a.deviceId = { exact: S.micId };
@@ -1036,9 +1048,9 @@ async function mcStart(){
       const r = new SR(); r.lang = 'ja-JP'; r.continuous = true; r.interimResults = true; mc.rec = r;
       r.onresult = e => { let t = ''; for (let i = e.resultIndex; i < e.results.length; i++) t += e.results[i][0].transcript; $('#mc_text').textContent = t; };
       r.onerror = e => { $('#mc_text').textContent = '音声認識エラー: ' + e.error + ({ network:'(ネット接続が必要です)', 'not-allowed':'(マイクの許可が必要です)', 'audio-capture':'(マイクが使えません)' }[e.error] || ''); };
-      r.onend = () => { if (mc.rec === r){ try { r.start(tr); } catch(_){} } };
+      r.onend = () => { if (mc.rec === r){ try { r.start(S.micId ? tr : undefined); } catch(_){} } };
       $('#mc_text').textContent = '(ここに聞き取った言葉が出ます)';
-      r.start(tr);
+      r.start(S.micId ? tr : undefined);
     } catch(e){ $('#mc_text').textContent = '音声認識を開始できませんでした: ' + e.message; }
   } else $('#mc_text').textContent = 'このブラウザは音声認識に対応していません';
 }
