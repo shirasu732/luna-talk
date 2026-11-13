@@ -8,6 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="AIとおはなし">
 <title>AIとおはなし</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.11.1/styles/atom-one-dark.min.css">
 <script type="importmap">{"imports":{"piper-plus":"https://unpkg.com/piper-plus@0.8.2/src/index.js","@piper-plus/g2p":"https://cdn.jsdelivr.net/npm/@piper-plus/g2p@0.4.2/src/index.js","onnxruntime-web":"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.min.mjs"}}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet">
@@ -165,6 +166,72 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
 #mc_bar{height:100%;width:0;background:linear-gradient(90deg,#7fe0cf,#ff8fb6);transition:width .05s}
 .mctext{min-height:44px;background:#fff;border:2px solid var(--line);border-radius:14px;padding:10px;font-size:15px}
 #mc_close{background:#f1eaff;color:var(--ink)}
+/* ===== アシスタント ===== */
+#assist{position:fixed;inset:0;z-index:15;display:none;flex-direction:column;
+  background:linear-gradient(170deg,#fdf0f7 0%,#f3edff 50%,#eaf8f5 100%);
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+#assist.open{display:flex}
+.asTop{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #eadff9;background:#ffffffb8;backdrop-filter:blur(8px)}
+.asTop h2{flex:1;margin:0;font-size:16px;line-height:1.25}
+#asModel{font-size:11px;color:var(--sub);font-weight:500}
+.asMain{flex:1;min-height:0;display:flex;position:relative}
+#asSide{width:260px;flex:none;border-right:1px solid #eadff9;background:#fffaffee;overflow-y:auto;padding:10px;display:none}
+#asSide.open{display:block;position:absolute;left:0;top:0;bottom:0;z-index:3;box-shadow:4px 0 16px #b9a6f540}
+@media (min-width:900px){#asSide{display:block;position:static;box-shadow:none}#asMenu{display:none}}
+.asItem{display:flex;align-items:center;gap:6px;padding:9px 10px;border-radius:12px;cursor:pointer;font-size:14px}
+.asItem span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.asItem.on,.asItem:hover{background:#f1eaff}
+.asItem button{border:none;background:none;cursor:pointer;opacity:.45;font-size:14px}
+.asItem button:hover{opacity:1}
+.asCol{flex:1;min-width:0;display:flex;flex-direction:column}
+#asMsgs{flex:1;overflow-y:auto;padding:16px 14px 8px}
+#asMsgs > *{max-width:820px;margin-left:auto;margin-right:auto}
+#asEmpty{flex:1;overflow-y:auto;padding:28px 16px;text-align:center}
+.asHello{font-size:22px;font-weight:700;margin:8px 0 6px}
+#asTpl{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;max-width:720px;margin:20px auto 0}
+.asChip{background:#fff;border:2px solid #f1e8ff;border-radius:16px;padding:12px;text-align:left;cursor:pointer;font-size:14px;
+  box-shadow:0 3px 10px #b9a6f520;font-family:inherit;color:var(--ink)}
+.asChip b{display:block;font-size:20px;margin-bottom:4px}
+.asChip:hover{border-color:var(--lav)}
+.asMsg{margin-bottom:16px;display:flex;flex-direction:column}
+.asMsg.user{align-items:flex-end}
+.asUser{max-width:85%;background:#e2f7f3;border-radius:18px 18px 4px 18px;padding:10px 14px;white-space:pre-wrap;word-break:break-word;font-size:15px;line-height:1.6}
+.asUser img{display:block;max-width:220px;max-height:220px;border-radius:10px;margin-bottom:6px}
+.asBody{background:#fff;border-radius:18px 18px 18px 4px;padding:12px 16px;box-shadow:0 3px 12px #b9a6f522;font-size:15px;line-height:1.75;word-break:break-word;overflow-x:auto}
+.asTools{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.asTools button,.codebar button{border:none;background:#f1eaff;color:var(--ink);border-radius:10px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+.asTools button:hover{background:#e6dbff}
+.md p{margin:.4em 0}
+.md h1,.md h2,.md h3{margin:.8em 0 .4em;line-height:1.35}
+.md h1{font-size:1.35em}.md h2{font-size:1.2em}.md h3{font-size:1.07em}
+.md ul,.md ol{padding-left:1.4em;margin:.4em 0}
+.md code{background:#f3eefe;border-radius:6px;padding:1px 5px;font-size:.9em;font-family:Consolas,"Courier New",monospace}
+.md pre{background:#282c34;color:#abb2bf;border-radius:0 0 12px 12px;padding:12px;overflow-x:auto;margin:0 0 .6em}
+.md pre code{background:none;padding:0;color:inherit;font-size:13px}
+.codebar{display:flex;align-items:center;gap:6px;background:#3a3f4b;color:#cfd3dc;border-radius:12px 12px 0 0;padding:5px 8px 5px 12px;margin-top:.6em;font-size:12px}
+.codebar span{flex:1}
+.codebar button{background:#4b5160;color:#fff}
+.md table{border-collapse:collapse;margin:.6em 0;font-size:14px}
+.md th,.md td{border:1px solid #e6dcfa;padding:6px 10px}
+.md th{background:#f6f1ff}
+.md blockquote{border-left:4px solid #e6dcfa;margin:.5em 0;padding:.2em .8em;color:#6f6290}
+.md a{color:#8a6fe0}
+.typing i{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--lav);margin-right:4px;animation:tp 1s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes tp{50%{transform:translateY(-5px);opacity:.5}}
+.asComposer{padding:6px 12px 10px;max-width:860px;width:100%;margin:0 auto}
+#asNote{min-height:0;margin:0 4px 6px;color:#c0789a}
+#asImgs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+#asImgs div{position:relative}
+#asImgs img{width:64px;height:64px;object-fit:cover;border-radius:10px;border:2px solid #fff;box-shadow:0 2px 8px #b9a6f540}
+#asImgs button{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:none;background:#4b3d6e;color:#fff;font-size:12px;cursor:pointer}
+.asBox{display:flex;align-items:flex-end;gap:8px;background:#fff;border:2px solid #efe6ff;border-radius:22px;padding:6px 6px 6px 8px;box-shadow:0 4px 14px #b9a6f530}
+.asBox:focus-within{border-color:var(--lav)}
+#asInput{flex:1;border:none;outline:none;resize:none;font-size:16px;font-family:inherit;color:var(--ink);max-height:180px;padding:8px 4px;background:transparent;line-height:1.5}
+#asAttach{border:none;background:none;font-size:20px;cursor:pointer;padding:6px}
+#asSendBtn{width:42px;height:42px;flex:none;border:none;border-radius:50%;background:linear-gradient(135deg,#ff8fb6,#b9a6f5);color:#fff;font-size:17px;cursor:pointer}
+#asSendBtn.stop{background:#4b3d6e}
+.asFoot{text-align:center;margin-top:6px}
 #resetBtn{background:none;color:var(--sub);font-size:12px;border:none;margin-top:12px;text-decoration:underline}
 #naming .panel{border-radius:24px;margin:auto 16px;text-align:center}
 #naming{align-items:center}
@@ -189,6 +256,7 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
 <header>
   <button id="nameTag" aria-label="なまえを変える">Luna</button>
   <div class="hbtns">
+    <button class="round" id="assistBtn" aria-label="アシスタント(作る・質問する)">✨</button>
     <button class="round" id="micBtn" aria-label="マイクの確認">🎤</button>
     <button class="round" id="logBtn" aria-label="会話の記録">💬</button>
     <button class="round" id="gear" aria-label="設定">⚙</button>
@@ -363,6 +431,9 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
     <label>Ollamaのモデル名</label>
     <input id="s_ollamaModel" type="text">
     <div class="hint">gemma3:1b(速い) / gemma3:4b(かしこい・少し遅い)。PowerShellで ollama pull モデル名 を実行して入れてね。</div>
+    <label>作る・質問するときのOllamaモデル(かしこいAI)</label>
+    <input id="s_smartModel" type="text">
+    <div class="hint">おすすめ: gemma3:4b(画像も読める)。PCに余裕があれば gemma3:12b。</div>
     <label>OllamaのURL</label>
     <input id="s_ollamaUrl" type="text">
     <label>ブラウザの中で動かすAIモデル</label>
@@ -435,6 +506,40 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
   </div>
 </div>
 
+<div id="assist">
+  <div class="asTop">
+    <button class="round" id="asBack" aria-label="もどる">←</button>
+    <button class="round" id="asMenu" aria-label="会話の一覧">☰</button>
+    <h2>Lunaアシスタント<br><span id="asModel"></span></h2>
+    <button class="round" id="asNewBtn" aria-label="新しい会話">＋</button>
+  </div>
+  <div class="asMain">
+    <div id="asSide">
+      <button class="bigbtn" id="asNew2" style="width:100%;margin-bottom:10px">＋ 新しい会話</button>
+      <div id="asList"></div>
+    </div>
+    <div class="asCol">
+      <div id="asEmpty">
+        <div class="asHello">✨ なにを作る？</div>
+        <div class="hint">質問や、作ってほしいものを書いてね。画像を見せて聞くこともできるよ。</div>
+        <div id="asTpl"></div>
+      </div>
+      <div id="asMsgs"></div>
+      <div class="asComposer">
+        <div id="asNote" class="hint"></div>
+        <div id="asImgs"></div>
+        <div class="asBox">
+          <button id="asAttach" aria-label="画像をつける">📎</button>
+          <textarea id="asInput" rows="1" placeholder="お願いや質問を書いてね"></textarea>
+          <button id="asSendBtn" aria-label="送信">➤</button>
+        </div>
+        <div class="hint asFoot">AIはまちがえることがあります。大事なことは確かめてね。</div>
+        <input id="asFile" type="file" accept="image/*" multiple hidden>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="loading"><div class="lbox"><div class="t">AIを準備中…</div><div id="loadText"></div><div class="pbar"><div id="pfill"></div></div><div class="hint2">初回だけダウンロードがあります。次からはすぐ起動します。</div></div></div>
 <div id="toast"></div>
 <script type="module">
@@ -452,7 +557,7 @@ const DEFAULTS = {
   model: 'auto', userName: '', setupDone: false,
   name: 'Luna', persona: DEFAULT_PERSONA, voiceURI: '',
   rate: 1.1, pitch: 1.35, endMs: 650, sens: 2.8, barge: 2.6,
-  aiEngine: 'auto', ollamaModel: 'gemma3:1b', ollamaUrl: 'http://localhost:11434',
+  aiEngine: 'auto', ollamaModel: 'gemma3:1b', smartModel: 'gemma3:4b', ollamaUrl: 'http://localhost:11434',
   voiceEngine: 'neural', aizuchi: true, speculative: true, localStt: false, search: true
 };
 const STORE_KEY = 'hiyori-local-settings';
@@ -1194,6 +1299,303 @@ $('#mc_start').onclick = mcStart;
 $('#mc_close').onclick = () => { mcStop(); $('#micCheck').classList.remove('open'); };
 $('#mc_dev').onchange = () => { S.micId = $('#mc_dev').value; saveSettings(); if (mc.stream) mcStart(); };
 
+/* ============ アシスタント(作る・質問する) ============ */
+const AS_KEY = 'luna-assist-chats';
+let asChats = [], asCur = null, asBusy = false, asCtl = null, asImages = [], mdLib = null, asSpeakTok = 0, asSpeakSrc = null;
+try { asChats = JSON.parse(localStorage.getItem(AS_KEY) || '[]'); } catch(e){ asChats = []; }
+const AS_TEMPLATES = [
+  ['✉️', 'メールを書く', '次の内容で、ていねいなメールを書いて。\n相手:\n用件:'],
+  ['📝', '文章を要約する', '次の文章を、大事なところだけ3行で要約して。\n\n'],
+  ['🌏', '翻訳する', '次の文章を自然な英語に翻訳して。\n\n'],
+  ['💡', 'アイデアを出す', '〇〇のアイデアを10個出して。'],
+  ['🎤', '自己PRを作る', '就職活動で使う自己PRを400字で作って。\n私の経験:'],
+  ['💻', 'コードを書く', '次の動きをするプログラムを書いて。\n言語:\nやりたいこと:'],
+  ['🖼️', '画像について聞く', 'この画像について、わかることを教えて。'],
+  ['❓', 'なんでも質問', '']
+];
+const EXT = { javascript:'js', js:'js', typescript:'ts', ts:'ts', python:'py', py:'py', html:'html', css:'css', java:'java', c:'c', cpp:'cpp', 'c++':'cpp', csharp:'cs', 'c#':'cs', cs:'cs', json:'json', bash:'sh', sh:'sh', shell:'sh', powershell:'ps1', ps1:'ps1', sql:'sql', go:'go', rust:'rs', kotlin:'kt', swift:'swift', php:'php', ruby:'rb', markdown:'md', md:'md', xml:'xml', yaml:'yml', yml:'yml', lua:'lua' };
+function asSave(){
+  try { localStorage.setItem(AS_KEY, JSON.stringify(asChats.slice(0, 60), (k, v) => (k === 'imgs' || k === 'b64') ? undefined : v)); }
+  catch(e){ toast('保存できる量をこえたので、古い会話を消してね'); }
+}
+async function loadMd(){
+  if (mdLib) return mdLib;
+  try {
+    const [m, p, h] = await Promise.all([
+      import('https://cdn.jsdelivr.net/npm/marked@15.0.12/lib/marked.esm.js'),
+      import('https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.es.mjs'),
+      import('https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.11.1/es/highlight.min.js')
+    ]);
+    mdLib = { marked: m.marked, purify: p.default, hljs: h.default };
+  } catch(e){ mdLib = {}; }
+  return mdLib;
+}
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]); }
+function renderMd(el, text){
+  if (mdLib && mdLib.marked && mdLib.purify) el.innerHTML = mdLib.purify.sanitize(mdLib.marked.parse(text, { breaks: true, gfm: true }));
+  else el.innerHTML = '<p>' + esc(text).replace(/\n/g, '<br>') + '</p>';
+  el.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });
+}
+function copyText(t, btn){
+  navigator.clipboard.writeText(t).then(() => {
+    if (!btn) return; const o = btn.textContent; btn.textContent = 'コピーした!'; setTimeout(() => btn.textContent = o, 1200);
+  }).catch(() => toast('コピーできませんでした'));
+}
+function downloadText(text, name){
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function decorateCode(el){
+  el.querySelectorAll('pre > code').forEach(code => {
+    if (code.dataset.done) return; code.dataset.done = '1';
+    if (mdLib && mdLib.hljs){ try { mdLib.hljs.highlightElement(code); } catch(e){} }
+    const lang = ((code.className.match(/language-([\w+#-]+)/) || [])[1] || 'text').toLowerCase();
+    const bar = document.createElement('div'); bar.className = 'codebar';
+    const name = document.createElement('span'); name.textContent = lang;
+    const cp = document.createElement('button'); cp.textContent = 'コピー'; cp.onclick = () => copyText(code.innerText, cp);
+    const sv = document.createElement('button'); sv.textContent = '保存'; sv.onclick = () => downloadText(code.innerText, 'luna_code.' + (EXT[lang] || 'txt'));
+    bar.append(name, cp, sv);
+    code.parentElement.before(bar);
+  });
+}
+function asNote(t){ $('#asNote').textContent = t || ''; }
+function asShowModel(name){ $('#asModel').textContent = name ? 'AI: ' + name : ''; }
+function asNew(){
+  asCur = { id: Date.now().toString(36), title: '新しい会話', msgs: [], t: Date.now() };
+  asChats.unshift(asCur); asSave(); asRender();
+  $('#asSide').classList.remove('open'); $('#asInput').focus();
+}
+function asOpen(id){ if (asBusy) return; asCur = asChats.find(c => c.id === id) || null; asRender(); $('#asSide').classList.remove('open'); }
+function asDelete(id){
+  if (asBusy) return;
+  asChats = asChats.filter(c => c.id !== id);
+  if (asCur && asCur.id === id) asCur = null;
+  asSave(); asRender();
+}
+function asRenderList(){
+  const box = $('#asList'); box.innerHTML = '';
+  if (!asChats.length){ box.innerHTML = '<div class="hint">まだ会話はありません</div>'; return; }
+  for (const c of asChats){
+    const row = document.createElement('div'); row.className = 'asItem' + (asCur && c.id === asCur.id ? ' on' : '');
+    const t = document.createElement('span'); t.textContent = c.title; t.onclick = () => asOpen(c.id);
+    const d = document.createElement('button'); d.textContent = '🗑'; d.title = '削除'; d.onclick = () => asDelete(c.id);
+    row.append(t, d); box.appendChild(row);
+  }
+}
+function asMsgEl(m, i){
+  const d = document.createElement('div'); d.className = 'asMsg ' + m.role;
+  if (m.role === 'user'){
+    const b = document.createElement('div'); b.className = 'asUser'; b.textContent = m.content;
+    if (m.imgs && m.imgs.length) m.imgs.slice().reverse().forEach(src => { const im = document.createElement('img'); im.src = src; b.prepend(im); });
+    else if (m.hadImg){ const s = document.createElement('div'); s.className = 'hint'; s.textContent = '(画像つき)'; b.prepend(s); }
+    d.appendChild(b);
+  } else {
+    const body = document.createElement('div'); body.className = 'asBody md';
+    renderMd(body, m.content || ''); decorateCode(body);
+    d.appendChild(body);
+    const tools = document.createElement('div'); tools.className = 'asTools';
+    const mk = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.onclick = fn; tools.appendChild(b); return b; };
+    const cpb = mk('コピー', () => copyText(m.content, cpb));
+    mk('読み上げ', () => speakLong(m.content));
+    mk('保存', () => downloadText(m.content, 'luna_' + new Date().toISOString().slice(0, 10) + '.md'));
+    if (i === asCur.msgs.length - 1) mk('もう一度', asRegenerate);
+    d.appendChild(tools);
+  }
+  return d;
+}
+function asRender(){
+  asRenderList();
+  const box = $('#asMsgs'); box.innerHTML = '';
+  const empty = !asCur || !asCur.msgs.length;
+  $('#asEmpty').style.display = empty ? '' : 'none';
+  box.style.display = empty ? 'none' : '';
+  if (empty) return;
+  asCur.msgs.forEach((m, i) => box.appendChild(asMsgEl(m, i)));
+  box.scrollTop = box.scrollHeight;
+}
+function asRenderTpl(){
+  const g = $('#asTpl'); g.innerHTML = '';
+  for (const [icon, label, text] of AS_TEMPLATES){
+    const b = document.createElement('button'); b.className = 'asChip';
+    b.innerHTML = '<b>' + icon + '</b>' + esc(label);
+    b.onclick = () => {
+      const ta = $('#asInput'); ta.value = text; asAutoGrow(); ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+      if (icon === '🖼️') $('#asFile').click();
+    };
+    g.appendChild(b);
+  }
+}
+function asAutoGrow(){ const ta = $('#asInput'); ta.style.height = 'auto'; ta.style.height = Math.min(180, ta.scrollHeight) + 'px'; }
+function asSetBusy(b){ const s = $('#asSendBtn'); s.textContent = b ? '■' : '➤'; s.classList.toggle('stop', b); s.setAttribute('aria-label', b ? '止める' : '送信'); }
+function asRenderImgs(){
+  const box = $('#asImgs'); box.innerHTML = '';
+  asImages.forEach((im, i) => {
+    const w = document.createElement('div');
+    const img = document.createElement('img'); img.src = im.url;
+    const x = document.createElement('button'); x.textContent = '×'; x.onclick = () => { asImages.splice(i, 1); asRenderImgs(); };
+    w.append(img, x); box.appendChild(w);
+  });
+}
+function asAddImage(file){
+  if (!file || !/^image\//.test(file.type)) return;
+  const img = new Image(); const u = URL.createObjectURL(file);
+  img.onload = () => {
+    const k = Math.min(1, 1024 / Math.max(img.width, img.height));
+    const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const url = c.toDataURL('image/jpeg', 0.85);
+    asImages.push({ url, b64: url.split(',')[1] }); asRenderImgs(); URL.revokeObjectURL(u);
+  };
+  img.src = u;
+}
+function asSystem(){
+  return `あなたは${S.name}。ユーザーのための、かしこくて親切な日本語アシスタント。質問には正確に答え、頼まれたもの(文章・コード・アイデアなど)はそのまま使える完成した形で作る。見出し・箇条書き・表・コードブロックなどMarkdownを使って読みやすくする。分からないことや自信のないことは正直にそう言う。`;
+}
+async function pickSmartModel(){
+  try {
+    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 1500);
+    const r = await fetch(S.ollamaUrl.replace(/\/$/, '') + '/api/tags', { signal: ctl.signal }); clearTimeout(tm);
+    const names = ((await r.json()).models || []).map(m => m.name);
+    const has = n => names.includes(n) || names.includes(n + ':latest');
+    if (S.smartModel && has(S.smartModel)) return S.smartModel;
+    for (const n of ['gemma3:12b', 'gemma3:4b', 'qwen3:8b', 'qwen3:4b']) if (has(n)) return n;
+    if (has(S.ollamaModel)) return S.ollamaModel;
+    return names[0] || null;
+  } catch(e){ return null; }
+}
+async function* asStream(chat){
+  let hist = chat.msgs.slice(0, -1).slice(-14);
+  while (hist.length && hist[0].role !== 'user') hist.shift();
+  const model = S.aiEngine === 'browser' ? null : await pickSmartModel();
+  if (model){
+    asShowModel(model + '(PC)');
+    asNote(model !== S.smartModel && !/12b|4b|8b/.test(model) ? `かしこいAIがまだ入っていないので「${model}」で答えるね。PowerShellで ollama pull ${S.smartModel} を実行すると、もっとかしこくなるよ` : '');
+    const msgs = [{ role: 'system', content: asSystem() }].concat(hist.map(m => {
+      const o = { role: m.role, content: m.content }; if (m.b64 && m.b64.length) o.images = m.b64; return o;
+    }));
+    asCtl = new AbortController();
+    const res = await fetch(S.ollamaUrl.replace(/\/$/, '') + '/api/chat', { method: 'POST', signal: asCtl.signal,
+      body: JSON.stringify({ model, messages: msgs, stream: true, keep_alive: '30m', options: { num_predict: 3000, temperature: 0.6, num_ctx: 8192 } }) });
+    if (!res.ok) throw new Error('Ollama ' + res.status + ' ' + (await res.text()).slice(0, 200));
+    const rd = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+    for (;;){
+      const { value, done } = await rd.read(); if (done) return;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0){
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line) continue;
+        const j = JSON.parse(line);
+        if (j.error) throw new Error(j.error);
+        if (j.message && j.message.content) yield j.message.content;
+        if (j.done) return;
+      }
+    }
+  }
+  if (hist.some(m => m.b64 && m.b64.length)) throw new Error('画像を読むには、PCでOllamaを動かして ollama pull gemma3:4b を実行してね');
+  asShowModel('ブラウザの中のAI(簡易)');
+  asNote('PCでOllamaを使うと、もっとかしこく速く答えられるよ');
+  const eng = await ensureEngine();
+  const msgs = hist.map(m => ({ role: m.role, content: m.content }));
+  msgs[0] = { role: 'user', content: asSystem() + '\n\n' + msgs[0].content };
+  const req = { messages: msgs, stream: true, max_tokens: 1024, temperature: 0.6 };
+  if (/^Qwen/.test(engineModel)) req.extra_body = { enable_thinking: false };
+  const chunks = await eng.chat.completions.create(req);
+  for await (const c of chunks){
+    if (!asBusy) break;
+    const d = c.choices && c.choices[0] && c.choices[0].delta && c.choices[0].delta.content;
+    if (d) yield d;
+  }
+}
+async function asSend(){
+  if (asBusy){ asStop(); return; }
+  const ta = $('#asInput'); const text = ta.value.trim();
+  if (!text && !asImages.length) return;
+  if (!asCur) asNew();
+  const m = { role: 'user', content: text || 'この画像について、わかることを教えて。' };
+  if (asImages.length){ m.imgs = asImages.map(x => x.url); m.b64 = asImages.map(x => x.b64); m.hadImg = true; }
+  asCur.msgs.push(m);
+  if (asCur.title === '新しい会話') asCur.title = m.content.replace(/\s+/g, ' ').slice(0, 24);
+  ta.value = ''; asAutoGrow(); asImages = []; asRenderImgs();
+  asSave(); asRender();
+  await asGenerate();
+}
+async function asGenerate(){
+  const chat = asCur; const out = { role: 'assistant', content: '' }; chat.msgs.push(out);
+  asRender();
+  let el = $('#asMsgs').lastElementChild.querySelector('.asBody');
+  el.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+  asBusy = true; asSetBusy(true);
+  let last = 0;
+  try {
+    await loadMd();
+    for await (const t of asStream(chat)){
+      out.content += t;
+      if (asCur === chat && performance.now() - last > 90){
+        last = performance.now(); renderMd(el, out.content.replace(/<think>[\s\S]*?(<\/think>|$)/g, ''));
+        const box = $('#asMsgs'); if (box.scrollHeight - box.scrollTop - box.clientHeight < 160) box.scrollTop = box.scrollHeight;
+      }
+    }
+  } catch(e){
+    if (!(e && e.name === 'AbortError')) out.content += (out.content ? '\n\n' : '') + '⚠️ ' + (e.message || e);
+  }
+  asBusy = false; asSetBusy(false); asCtl = null;
+  out.content = out.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim() || '(返事が止まりました)';
+  asSave(); if (asCur === chat) asRender();
+}
+function asRegenerate(){
+  if (asBusy || !asCur) return;
+  const ms = asCur.msgs; if (ms.length && ms[ms.length - 1].role === 'assistant') ms.pop();
+  asRender(); asGenerate();
+}
+function asStop(){
+  if (asCtl){ try { asCtl.abort(); } catch(e){} }
+  try { engine && engine.interruptGenerate(); } catch(e){}
+  asBusy = false;
+}
+function stopSpeakLong(){ asSpeakTok++; if (asSpeakSrc){ try { asSpeakSrc.onended = null; asSpeakSrc.stop(); } catch(e){} asSpeakSrc = null; } try { synth && synth.cancel(); } catch(e){} }
+async function speakLong(md){
+  stopSpeakLong(); const tok = asSpeakTok;
+  const plain = md.replace(/```[\s\S]*?```/g, '(コードは省略するね)').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[#*`>|_~]+/g, ' ');
+  const parts = plain.split(/(?<=[。！？!?\n])/).map(s => s.trim()).filter(Boolean).slice(0, 80);
+  if (S.voiceEngine !== 'device'){ try { await ensurePiper(); } catch(e){} }
+  if (useNeural()){
+    let next = parts.length ? synthClip(stripDeco(parts[0])).catch(() => null) : null;
+    for (let i = 0; i < parts.length; i++){
+      const buf = await next; if (tok !== asSpeakTok) return;
+      next = i + 1 < parts.length ? synthClip(stripDeco(parts[i + 1])).catch(() => null) : null;
+      if (!buf) continue;
+      await new Promise(res => { asSpeakSrc = playBuf(buf, res); });
+      if (tok !== asSpeakTok) return;
+    }
+  } else if (synth){ try { synth.speak(makeUtter(stripDeco(parts.join('')))); } catch(e){} }
+}
+function openAssist(){
+  if (running) stopCall();
+  $('#assist').classList.add('open');
+  asRenderTpl(); asRender(); loadMd().then(() => { if (asCur) asRender(); });
+  if (S.aiEngine !== 'browser') pickSmartModel().then(m => { if (m) asShowModel(m + '(PC)'); else asShowModel('ブラウザの中のAI(簡易)'); });
+}
+function closeAssist(){ if (asBusy) asStop(); stopSpeakLong(); $('#assist').classList.remove('open'); }
+$('#assistBtn').onclick = openAssist;
+$('#asBack').onclick = closeAssist;
+$('#asMenu').onclick = () => $('#asSide').classList.toggle('open');
+$('#asNewBtn').onclick = asNew;
+$('#asNew2').onclick = asNew;
+$('#asSendBtn').onclick = asSend;
+$('#asAttach').onclick = () => $('#asFile').click();
+$('#asFile').onchange = e => { [...e.target.files].forEach(asAddImage); e.target.value = ''; };
+$('#asInput').addEventListener('input', asAutoGrow);
+$('#asInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(pointer:fine)').matches){ e.preventDefault(); asSend(); }
+});
+$('#asInput').addEventListener('paste', e => {
+  const files = [...(e.clipboardData && e.clipboardData.files || [])].filter(f => /^image\//.test(f.type));
+  if (files.length){ e.preventDefault(); files.forEach(asAddImage); }
+});
+
 /* ============ 通話の開始・終了 ============ */
 async function prepareLocalStt(){
   useLocalStt = false;
@@ -1261,7 +1663,7 @@ function sendText(){
 }
 
 /* ============ 設定画面 ============ */
-const FIELDS = ['aiEngine','ollamaModel','ollamaUrl','voiceEngine','model','name','userName','persona','voiceURI','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
+const FIELDS = ['aiEngine','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','persona','voiceURI','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
 function openSettings(){
   for (const k of FIELDS){
     const el = $('#s_' + k); if (!el) continue;
