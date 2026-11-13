@@ -517,7 +517,9 @@ async function pickModelId(){
   let m = S.model;
   if (m === 'auto'){
     const mem = navigator.deviceMemory || 4;           // 端末のメモリ(GB・目安)
-    m = mem >= 8 ? 'gemma-2-2b-jpn-it' : 'gemma3-1b-it';
+    const gi = ad.info || {};
+    const weak = /intel/i.test(gi.vendor || '') || /integrated/i.test(gi.type || '');   // 内蔵GPUは軽いモデルにする
+    m = mem >= 8 && !weak ? 'gemma-2-2b-jpn-it' : 'gemma3-1b-it';
   }
   if (m === 'gemma3-1b-it') return f16 ? 'gemma3-1b-it-q4f16_1-MLC' : 'Qwen3-0.6B-q4f32_1-MLC';
   return m + (f16 ? '-q4f16_1-MLC' : '-q4f32_1-MLC');
@@ -670,7 +672,7 @@ async function runGen(g, msgs){
     const stop = new Promise(res => { g.stop = res; });
     for (;;){
       let to;
-      const r = await Promise.race([it.next(), stop, new Promise(res => { to = setTimeout(() => res({ timeout: true }), 45000); })]);
+      const r = await Promise.race([it.next(), stop, new Promise(res => { to = setTimeout(() => res({ timeout: true }), g.raw ? 30000 : 120000); })]);
       clearTimeout(to);
       if (r && r.timeout) throw new Error('AIの返事が止まってしまいました。もう一度話しかけてね');
       if (g.cancelled || !r || r.done){ try { it.return && it.return(); } catch(_){} break; }
