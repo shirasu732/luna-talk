@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#f6eeff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AIとおはなし">
+<title>AIとおはなし</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#4b3d6e; --sub:#9a8cbc; --pink:#ff8fb6; --pink2:#ffc2d8; --mint:#7fe0cf; --lav:#b9a6f5;
+  --card:#ffffffd9; --line:#eadff9; --glow:0;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;color:var(--ink);font-family:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Noto Sans JP",system-ui,sans-serif}
+body{display:flex;flex-direction:column;height:100dvh;overflow:hidden;
+  background:linear-gradient(170deg,#fde9f3 0%,#f1e8ff 45%,#e4f7f4 100%);
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+button{font-family:inherit}
+
+/* ふわふわ背景 */
+.bgdots{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.bgdots i{position:absolute;border-radius:50%;background:#fff;opacity:.55;animation:floaty 9s ease-in-out infinite}
+.bgdots i:nth-child(1){width:90px;height:90px;left:-20px;top:12%}
+.bgdots i:nth-child(2){width:46px;height:46px;right:8%;top:8%;animation-delay:-3s;background:#ffd9e8}
+.bgdots i:nth-child(3){width:130px;height:130px;right:-40px;top:40%;animation-delay:-5s;background:#e6fbf7}
+.bgdots i:nth-child(4){width:28px;height:28px;left:14%;top:46%;animation-delay:-1s;background:#efe6ff}
+.bgdots b{position:absolute;color:#ffc94d;font-size:16px;animation:twinkle 2.6s ease-in-out infinite}
+.bgdots b:nth-of-type(1){left:12%;top:20%}
+.bgdots b:nth-of-type(2){right:16%;top:28%;animation-delay:-1s;color:#ff9fc4}
+.bgdots b:nth-of-type(3){left:22%;top:58%;animation-delay:-1.8s;color:#8fdccd}
+@keyframes floaty{50%{transform:translateY(-18px)}}
+@keyframes twinkle{50%{transform:scale(.5) rotate(30deg);opacity:.3}}
+
+header{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:10px 14px 0}
+#nameTag{background:var(--card);border:2px solid #fff;box-shadow:0 3px 10px #b9a6f540;color:var(--ink);
+  font-size:17px;font-weight:700;padding:6px 16px 6px 14px;border-radius:20px;cursor:pointer;letter-spacing:.06em}
+#nameTag::after{content:"✎";font-size:12px;color:var(--sub);margin-left:6px}
+.hbtns{display:flex;gap:8px}
+.round{width:40px;height:40px;border-radius:50%;border:2px solid #fff;background:var(--card);color:var(--ink);
+  font-size:18px;box-shadow:0 3px 10px #b9a6f540;cursor:pointer}
+
+/* キャラのステージ */
+#stage{position:relative;z-index:1;flex:1;min-height:0;display:flex;justify-content:center;align-items:flex-end}
+#char{height:100%;max-height:560px;width:auto;max-width:100%;overflow:visible;filter:drop-shadow(0 8px 18px #b9a6f555);-webkit-mask-image:linear-gradient(to bottom,#000 70%,transparent 92%);mask-image:linear-gradient(to bottom,#000 70%,transparent 92%)}
+#body{animation:breathe 3.6s ease-in-out infinite;transform-origin:200px 480px}
+@keyframes breathe{50%{transform:translateY(-3px) scale(1.006)}}
+.headRot{transform-origin:200px 320px;animation:sway 7s ease-in-out infinite;transition:rotate .5s}
+@keyframes sway{0%,100%{transform:rotate(-1.4deg)}50%{transform:rotate(1.4deg)}}
+body[data-state=listening] .headRot{rotate:3.5deg}
+body[data-state=thinking] .headRot{rotate:-3deg}
+body.nod .nodG{animation:nod .45s ease}
+@keyframes nod{40%{transform:translateY(7px)}}
+.hairSway{transform-origin:200px 120px;animation:hair 5s ease-in-out infinite}
+@keyframes hair{50%{transform:rotate(.8deg) skewX(.6deg)}}
+#tuftL{transform-origin:96px 190px;animation:tuft 4s ease-in-out infinite}
+#tuftR{transform-origin:304px 190px;animation:tuft 4s ease-in-out infinite reverse}
+@keyframes tuft{50%{transform:rotate(3deg)}}
+.eye{transform-box:fill-box;transform-origin:center;animation:blink 4.8s infinite}
+#eyeR{animation-delay:.04s}
+@keyframes blink{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.06)}}
+.iris{transition:transform .35s}
+body[data-state=thinking] .iris{transform:translate(-5px,-7px)}
+body[data-state=listening] .iris{transform:translate(2px,1px)}
+/* 口 */
+.mouth{display:none}
+#mSmile{display:inline}
+body[data-state=thinking] #mSmile{display:none}
+body[data-state=thinking] #mO{display:inline}
+body.mouth #mSmile,body.mouth-i #mSmile,body.mouth #mO,body.mouth-i #mO{display:none}
+body.mouth #mA{display:inline}
+body.mouth-i #mI{display:inline}
+/* ヘッドホンの光 */
+.cupLight{opacity:calc(.35 + var(--glow)*.65);transition:opacity .08s}
+body:not([data-state=listening]) .cupLight{opacity:.35}
+body[data-state=speaking] .cupLight{fill:#ff9fc4;opacity:.8}
+body[data-state=thinking] .cupLight{fill:#ffd36b;animation:blinkL 1s infinite}
+@keyframes blinkL{50%{opacity:.3}}
+.sweat{opacity:0;transition:opacity .3s}
+body[data-state=thinking] .sweat{opacity:1}
+
+#aizuchiBubble{position:absolute;left:58%;top:18%;background:#fff;color:var(--pink);font-size:16px;font-weight:700;
+  padding:5px 12px;border-radius:16px 16px 16px 4px;box-shadow:0 3px 10px #ff8fb640;
+  opacity:0;transform:translateY(8px) scale(.9);transition:.2s;pointer-events:none}
+#aizuchiBubble.show{opacity:1;transform:none}
+
+/* 字幕・状態 */
+#captions{position:relative;z-index:2;padding:0 16px;display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:-6px}
+#bubble{max-width:560px;width:100%;background:var(--card);backdrop-filter:blur(6px);border:2px solid #fff;
+  border-radius:20px;padding:10px 16px;font-size:16px;line-height:1.6;box-shadow:0 4px 16px #b9a6f540;
+  min-height:48px;opacity:.0;transform:translateY(6px);transition:.25s}
+#bubble.show{opacity:1;transform:none}
+#statusRow{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--sub)}
+#statusDot{width:8px;height:8px;border-radius:50%;background:#d8cdee}
+body[data-state=listening] #statusDot{background:var(--mint);box-shadow:0 0 0 calc(var(--glow)*6px) #7fe0cf55}
+body[data-state=thinking] #statusDot{background:#ffd36b}
+body[data-state=speaking] #statusDot{background:var(--pink)}
+#live{font-size:14px;color:#3aa694;min-height:20px;max-width:92%;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#meter{display:none}
+
+/* 操作 */
+#controls{position:relative;z-index:2;display:flex;gap:8px;align-items:center;padding:10px 14px 12px}
+#callBtn{flex:none;height:56px;border-radius:28px;border:none;padding:0 20px 0 16px;display:flex;align-items:center;gap:8px;
+  background:linear-gradient(135deg,#7fe0cf,#8fc9ff);color:#fff;font-size:16px;font-weight:700;cursor:pointer;
+  box-shadow:0 6px 16px #7fe0cf80}
+#callIcon{font-size:20px}
+body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-shadow:0 6px 16px #ff8fb680}
+#textIn{flex:1;min-width:0;background:var(--card);border:2px solid #fff;color:var(--ink);border-radius:24px;
+  padding:12px 14px;font-size:16px;outline:none;font-family:inherit;box-shadow:0 3px 10px #b9a6f530}
+#sendBtn{flex:none;width:46px;height:46px;border-radius:50%;background:var(--pink);border:none;color:#fff;font-size:18px;
+  box-shadow:0 4px 12px #ff8fb660}
+
+@media (min-width:800px){
+  #controls{width:100%;max-width:760px;margin:0 auto}
+  #drawer{width:100%;max-width:640px;margin:0 auto}
+  .panel{border-radius:24px;margin-bottom:24px}
+  #settings{align-items:center}
+}
+/* 会話ログ(引き出し) */
+#drawer{position:fixed;left:0;right:0;bottom:0;z-index:8;height:70dvh;background:#fffaffee;backdrop-filter:blur(10px);
+  border-radius:24px 24px 0 0;box-shadow:0 -6px 24px #b9a6f550;transform:translateY(105%);transition:transform .3s;
+  display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom)}
+#drawer.open{transform:none}
+#drawer .dh{display:flex;justify-content:space-between;align-items:center;padding:12px 16px 6px;font-weight:700}
+#log{flex:1;overflow-y:auto;padding:6px 14px 16px;display:flex;flex-direction:column;gap:8px}
+.msg{max-width:84%;padding:8px 12px;border-radius:16px;font-size:15px;line-height:1.55;word-break:break-word}
+.msg.user{align-self:flex-end;background:#e2f7f3;border-bottom-right-radius:4px}
+.msg.ai{align-self:flex-start;background:#ffe9f2;border-bottom-left-radius:4px}
+.msg.ai .cut{color:#e0739a;font-size:12px;margin-left:4px}
+.note{align-self:center;font-size:12px;color:var(--sub);background:#f3ecff;padding:3px 10px;border-radius:10px}
+
+#toast{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top));transform:translateX(-50%);background:#4b3d6ee6;color:#fff;padding:8px 14px;
+  border-radius:12px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;max-width:90vw;z-index:40}
+#toast.show{opacity:1}
+
+/* モーダル共通 */
+.modal{position:fixed;inset:0;background:#4b3d6e66;display:none;z-index:20;align-items:flex-end;justify-content:center}
+.modal.open{display:flex}
+.panel{background:#fffaff;width:100%;max-width:560px;max-height:88dvh;overflow-y:auto;border-radius:24px 24px 0 0;
+  padding:18px 18px calc(18px + env(safe-area-inset-bottom))}
+.panel h2{margin:0 0 6px;font-size:19px}
+.panel label{display:block;font-size:12px;color:var(--sub);margin:14px 0 5px}
+.panel input[type=text],.panel select,.panel textarea{width:100%;background:#fff;border:2px solid var(--line);color:var(--ink);
+  border-radius:14px;padding:11px;font-size:16px;font-family:inherit;outline:none}
+.panel input[type=text]:focus,.panel textarea:focus{border-color:var(--lav)}
+.panel textarea{min-height:110px;resize:vertical}
+.panel .row{display:flex;align-items:center;gap:10px}
+.panel .row input[type=range]{flex:1;accent-color:var(--pink)}
+.panel .val{width:44px;text-align:right;font-size:13px}
+.panel .hint{font-size:11px;color:var(--sub);margin-top:4px;line-height:1.6}
+.panel .btns{display:flex;gap:8px;margin-top:18px}
+.panel .btns button,.bigbtn{flex:1;padding:13px;border-radius:16px;border:none;font-size:16px;font-weight:700}
+#saveBtn,.bigbtn{background:linear-gradient(135deg,#ff8fb6,#b9a6f5);color:#fff}
+#closeBtn{background:#f1eaff;color:var(--ink)}
+#resetBtn{background:none;color:var(--sub);font-size:12px;border:none;margin-top:12px;text-decoration:underline}
+#naming .panel{border-radius:24px;margin:auto 16px;text-align:center}
+#naming{align-items:center}
+#naming .lead{font-size:14px;color:var(--sub);line-height:1.7;margin:4px 0 4px}
+#naming label{text-align:left}
+#naming .bigbtn{width:100%;margin-top:20px}
+
+/* ロード画面 */
+#loading{position:fixed;inset:0;background:#4b3d6e66;display:none;z-index:30;align-items:center;justify-content:center}
+#loading.show{display:flex}
+.lbox{background:#fffaff;border-radius:22px;padding:22px;width:min(86vw,380px);text-align:center}
+.lbox .t{font-weight:700;margin-bottom:6px}
+#loadText{font-size:12px;line-height:1.6;color:var(--sub);word-break:break-all;min-height:36px}
+.pbar{height:10px;background:#f1eaff;border-radius:5px;margin:12px 0 10px;overflow:hidden}
+#pfill{height:100%;width:0;background:linear-gradient(90deg,#7fe0cf,#ff8fb6);transition:width .2s}
+.hint2{font-size:11px;color:var(--sub)}
+</style>
+</head>
+<body data-state="idle">
+<div class="bgdots"><i></i><i></i><i></i><i></i><b>✦</b><b>✦</b><b>✦</b></div>
+
+<header>
+  <button id="nameTag" aria-label="なまえを変える">Luna</button>
+  <div class="hbtns">
+    <button class="round" id="logBtn" aria-label="会話の記録">💬</button>
+    <button class="round" id="gear" aria-label="設定">⚙</button>
+  </div>
+</header>
+
+<div id="stage">
+  <svg id="char" viewBox="0 0 400 500" aria-label="キャラクター">
+    <defs>
+      <linearGradient id="hairGrad" gradientUnits="userSpaceOnUse" x1="0" y1="60" x2="0" y2="480">
+        <stop offset="0" stop-color="#f1ecff"/><stop offset=".42" stop-color="#c7b6f8"/>
+        <stop offset=".78" stop-color="#d9aef0"/><stop offset="1" stop-color="#ffb8d4"/>
+      </linearGradient>
+      <linearGradient id="hairShade" gradientUnits="userSpaceOnUse" x1="0" y1="120" x2="0" y2="500">
+        <stop offset="0" stop-color="#a893e8"/><stop offset="1" stop-color="#e59cc8"/>
+      </linearGradient>
+      <linearGradient id="irisGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#47358f"/><stop offset=".5" stop-color="#7b6fdc"/><stop offset="1" stop-color="#86ecd9"/>
+      </linearGradient>
+      <linearGradient id="clothGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f0ebff"/>
+      </linearGradient>
+      <clipPath id="clipL"><ellipse cx="156" cy="224" rx="24" ry="28"/></clipPath>
+      <clipPath id="clipR"><ellipse cx="244" cy="224" rx="24" ry="28"/></clipPath>
+    </defs>
+    <g id="body">
+      <!-- 後ろ髪 -->
+      <g class="nodG"><g class="headRot"><g class="hairSway">
+        <path d="M200 52 C96 52 56 140 60 236 C64 330 46 420 38 500 L362 500 C354 420 336 330 340 236 C344 140 304 52 200 52Z" fill="url(#hairGrad)"/>
+        <path d="M200 130 C132 130 106 206 110 284 C114 362 102 430 98 500 L302 500 C298 430 286 362 290 284 C294 206 268 130 200 130Z" fill="url(#hairShade)" opacity=".75"/>
+      </g></g></g>
+      <!-- 首・服 -->
+      <path d="M178 286 L178 346 Q200 358 222 346 L222 286Z" fill="#f7d9cc"/>
+      <path d="M180 300 Q200 316 220 300 L220 312 Q200 326 180 312Z" fill="#efc7b8" opacity=".7"/>
+      <path d="M66 500 C72 420 118 372 176 354 Q200 366 224 354 C282 372 328 420 334 500Z" fill="url(#clothGrad)"/>
+      <path d="M176 354 L200 424 L146 404 L112 384 C130 368 152 360 176 354Z" fill="#8fe0d4"/>
+      <path d="M224 354 L200 424 L254 404 L288 384 C270 368 248 360 224 354Z" fill="#8fe0d4"/>
+      <path d="M124 384 L150 398 L196 414" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M276 384 L250 398 L204 414" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <!-- 胸のリボン -->
+      <g>
+        <path d="M196 428 L184 466 L194 460 L199 470Z" fill="#ff7aa8"/>
+        <path d="M204 428 L216 466 L206 460 L201 470Z" fill="#ff7aa8"/>
+        <path d="M200 424 C180 404 156 408 160 426 C164 444 186 438 200 426Z" fill="#ff8fb6"/>
+        <path d="M200 424 C220 404 244 408 240 426 C236 444 214 438 200 426Z" fill="#ff8fb6"/>
+        <circle cx="200" cy="425" r="8" fill="#ff6f9f"/>
+      </g>
+      <!-- 頭(前) -->
+      <g class="nodG"><g class="headRot">
+        <!-- 顔 -->
+        <path d="M110 196 C108 262 140 308 200 320 C260 308 292 262 290 196 C290 128 252 100 200 100 C148 100 110 128 110 196Z" fill="#fff4ee" stroke="#f1c9bc" stroke-width="2"/>
+        <!-- ほっぺ -->
+        <ellipse cx="146" cy="264" rx="19" ry="10" fill="#ffaec6" opacity=".55"/>
+        <ellipse cx="254" cy="264" rx="19" ry="10" fill="#ffaec6" opacity=".55"/>
+        <path d="M138 262 l-4 6 M146 262 l-4 6 M154 262 l-4 6 M246 262 l-4 6 M254 262 l-4 6 M262 262 l-4 6" stroke="#ff8fb0" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+        <!-- まゆ -->
+        <path d="M136 186 Q152 179 170 184" stroke="#9a86d8" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <path d="M230 184 Q248 179 264 186" stroke="#9a86d8" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <!-- 目(左) -->
+        <g class="eye" id="eyeL">
+          <ellipse cx="156" cy="224" rx="24" ry="28" fill="#fff"/>
+          <g clip-path="url(#clipL)"><g class="iris">
+            <ellipse cx="156" cy="229" rx="19" ry="24" fill="url(#irisGrad)"/>
+            <ellipse cx="156" cy="231" rx="9" ry="12" fill="#33246a"/>
+            <ellipse cx="156" cy="245" rx="12" ry="5" fill="#b8fff1" opacity=".55"/>
+            <ellipse cx="148" cy="217" rx="7" ry="8.5" fill="#fff"/>
+            <circle cx="164" cy="238" r="3.5" fill="#fff" opacity=".95"/>
+            <circle cx="150" cy="240" r="1.8" fill="#fff" opacity=".8"/>
+          </g></g>
+          <path d="M127 216 Q136 192 160 193 Q180 195 187 213" stroke="#3a2a6e" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+          <path d="M129 214 L119 206 M132 206 L124 197" stroke="#3a2a6e" stroke-width="3.5" stroke-linecap="round"/>
+          <path d="M140 251 Q156 256 170 250" stroke="#c8b4ee" stroke-width="2" fill="none" stroke-linecap="round"/>
+        </g>
+        <!-- 目(右) -->
+        <g class="eye" id="eyeR">
+          <ellipse cx="244" cy="224" rx="24" ry="28" fill="#fff"/>
+          <g clip-path="url(#clipR)"><g class="iris">
+            <ellipse cx="244" cy="229" rx="19" ry="24" fill="url(#irisGrad)"/>
+            <ellipse cx="244" cy="231" rx="9" ry="12" fill="#33246a"/>
+            <ellipse cx="244" cy="245" rx="12" ry="5" fill="#b8fff1" opacity=".55"/>
+            <ellipse cx="236" cy="217" rx="7" ry="8.5" fill="#fff"/>
+            <circle cx="252" cy="238" r="3.5" fill="#fff" opacity=".95"/>
+            <circle cx="238" cy="240" r="1.8" fill="#fff" opacity=".8"/>
+          </g></g>
+          <path d="M213 213 Q220 195 240 193 Q264 192 273 216" stroke="#3a2a6e" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+          <path d="M271 214 L281 206 M268 206 L276 197" stroke="#3a2a6e" stroke-width="3.5" stroke-linecap="round"/>
+          <path d="M230 250 Q244 256 260 251" stroke="#c8b4ee" stroke-width="2" fill="none" stroke-linecap="round"/>
+        </g>
+        <!-- 鼻・口 -->
+        <path d="M199 262 q2 3 4 2" stroke="#e6b2a2" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path id="mSmile" class="mouth" d="M189 281 Q200 291 211 281" stroke="#c95a76" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <g id="mA" class="mouth">
+          <path d="M187 279 Q200 300 213 279 Q200 283 187 279Z" fill="#c2465e"/>
+          <ellipse cx="200" cy="291" rx="6" ry="3" fill="#ff8fa8"/>
+        </g>
+        <path id="mI" class="mouth" d="M190 281 Q200 291 210 281 Q200 285 190 281Z" fill="#c2465e"/>
+        <ellipse id="mO" class="mouth" cx="200" cy="284" rx="5" ry="6" fill="#c2465e"/>
+        <path class="sweat" d="M282 168 C275 182 273 190 280 194 C287 196 291 186 282 168Z" fill="#c4ecff"/>
+        <!-- 横髪 -->
+        <g id="tuftL">
+          <path stroke="#a991e6" stroke-width="1.5" d="M114 176 C98 236 104 300 90 362 C86 384 96 398 106 384 C118 330 124 270 128 198Z" fill="url(#hairGrad)"/>
+          <path d="M94 338 l-10 -8 l2 14z M94 338 l10 -10 l0 16z" fill="#8fe0d4"/><circle cx="94" cy="338" r="4" fill="#6fd2c2"/>
+        </g>
+        <g id="tuftR">
+          <path stroke="#a991e6" stroke-width="1.5" d="M286 176 C302 236 296 300 310 362 C314 384 304 398 294 384 C282 330 276 270 272 198Z" fill="url(#hairGrad)"/>
+        </g>
+        <!-- 前髪 -->
+        <g class="hairSway">
+          <path stroke="#a991e6" stroke-width="1.5" stroke-linejoin="round" d="M106 208 C94 140 136 86 200 84 C264 86 306 140 294 208 L284 178 C281 192 274 199 266 205 C268 184 262 164 251 150 C249 172 240 187 226 197 C232 175 228 157 219 142 C213 164 202 181 186 191 C192 171 190 153 183 141 C171 161 156 177 136 187 C142 171 142 157 139 147 C127 162 119 182 115 203Z" fill="url(#hairGrad)"/>
+          <path d="M150 112 C170 98 196 96 214 100" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round" opacity=".7"/>
+          <path d="M196 86 C192 58 216 42 232 52 C217 54 207 66 205 86Z" fill="url(#hairGrad)"/>
+        </g>
+        <!-- ねこ耳ヘッドホン -->
+        <path d="M128 152 L135 102 L166 138Z" fill="#fff"/>
+        <path d="M137 144 L140 117 L156 137Z" fill="#ffc2d8"/>
+        <path d="M272 152 L265 102 L234 138Z" fill="#fff"/>
+        <path d="M263 144 L260 117 L244 137Z" fill="#ffc2d8"/>
+        <path d="M100 212 C92 98 308 98 300 212" stroke="#fff" stroke-width="13" fill="none" stroke-linecap="round"/>
+        <path d="M100 212 C92 98 308 98 300 212" stroke="#b9a6f5" stroke-width="3" fill="none" stroke-linecap="round" opacity=".7"/>
+        <rect x="80" y="192" width="36" height="58" rx="17" fill="#fff" stroke="#e6dcfa" stroke-width="3"/>
+        <ellipse class="cupLight" cx="98" cy="221" rx="9" ry="17" fill="#7fe0cf"/>
+        <rect x="284" y="192" width="36" height="58" rx="17" fill="#fff" stroke="#e6dcfa" stroke-width="3"/>
+        <ellipse class="cupLight" cx="302" cy="221" rx="9" ry="17" fill="#7fe0cf"/>
+        <path d="M94 246 C98 280 128 298 156 300" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>
+        <circle cx="160" cy="300" r="6" fill="#ff8fb6"/>
+        <path d="M252 108 l3 7 7.5 .5 -5.8 4.8 2 7.3 -6.7 -4 -6.7 4 2 -7.3 -5.8 -4.8 7.5 -.5z" fill="#ffd36b"/>
+      </g></g>
+    </g>
+  </svg>
+  <div id="aizuchiBubble">うん</div>
+</div>
+
+<div id="captions">
+  <div id="bubble" class="show"><span id="welcomeName">Luna</span>だよ。下のボタンでおはなししよう！</div>
+  <div id="statusRow"><span id="statusDot"></span><span id="status"></span></div>
+  <div id="live"></div>
+  <div id="meter"><div id="meterBar"></div><div id="meterThr"></div></div>
+</div>
+
+<div id="controls">
+  <button id="callBtn"><span id="callIcon">📞</span><span id="callLabel">おはなしする</span></button>
+  <input id="textIn" type="text" placeholder="文字でもOK" enterkeyhint="send" autocomplete="off">
+  <button id="sendBtn" aria-label="送信">➤</button>
+</div>
+
+<div id="drawer">
+  <div class="dh"><span>会話のきろく</span><button class="round" id="drawerClose" aria-label="閉じる">✕</button></div>
+  <div id="log"></div>
+</div>
+
+<div id="naming" class="modal">
+  <div class="panel">
+    <h2 id="namingTitle">はじめまして！</h2>
+    <div class="lead">わたしに、なまえをつけてくれる？<br>あとから名前のところをタップすれば変えられるよ。</div>
+    <label>わたしのなまえ</label>
+    <input id="n_name" type="text" maxlength="16" enterkeyhint="next">
+    <label>あなたのことは、なんて呼べばいい？(空欄なら「きみ」)</label>
+    <input id="n_user" type="text" maxlength="16" enterkeyhint="done">
+    <button class="bigbtn" id="n_save">決定！</button>
+  </div>
+</div>
+
+<div id="settings" class="modal">
+  <div class="panel">
+    <h2>設定</h2>
+    <label>AIモデル(スマホの中で動きます)</label>
+    <select id="s_model">
+      <option value="auto">おまかせ(端末に合わせて自動で選ぶ)</option>
+      <option value="gemma3-1b-it">かるい:Gemma 3 1B(約0.7GB・ふつうのスマホ向け)</option>
+      <option value="gemma-2-2b-jpn-it">ふつう:Gemma 2 2B 日本語版(約1.5GB・日本語が得意)</option>
+      <option value="Qwen3-4B">おもい:Qwen3 4B(約2.5GB・ハイエンド機向け)</option>
+    </select>
+    <div class="hint">初回だけダウンロードがあります(Wi-Fi推奨)。2回目からは端末に保存されたものを使うので、通信なし・回数制限なしで動きます。重い・アプリが落ちるときは「かるい」にしてね。</div>
+    <label>キャラのなまえ</label>
+    <input id="s_name" type="text" maxlength="16">
+    <label>あなたの呼ばれ方(空欄なら「きみ」)</label>
+    <input id="s_userName" type="text" maxlength="16">
+    <label>キャラ設定(性格・口調)</label>
+    <textarea id="s_persona"></textarea>
+    <label>声</label>
+    <select id="s_voiceURI"></select>
+    <div class="hint">端末に入っている日本語の声から選べます。</div>
+    <label>話す速さ</label>
+    <div class="row"><input id="s_rate" type="range" min="0.7" max="1.8" step="0.05"><span class="val" id="v_rate"></span></div>
+    <label>声の高さ</label>
+    <div class="row"><input id="s_pitch" type="range" min="0.5" max="2" step="0.05"><span class="val" id="v_pitch"></span></div>
+    <label>返事を始めるまでの間(ミリ秒)</label>
+    <div class="row"><input id="s_endMs" type="range" min="400" max="1600" step="50"><span class="val" id="v_endMs"></span></div>
+    <div class="hint">短いほど早く返事しますが、話の途中で返事しやすくなります。</div>
+    <label>マイクの感度(小さいほど敏感)</label>
+    <div class="row"><input id="s_sens" type="range" min="1.5" max="6" step="0.1"><span class="val" id="v_sens"></span></div>
+    <label>割り込みの効きにくさ(大きいほど自分の声で止まりにくい)</label>
+    <div class="row"><input id="s_barge" type="range" min="1.2" max="5" step="0.1"><span class="val" id="v_barge"></span></div>
+    <div class="hint">スピーカーだとAIの声を拾って勝手に止まることがあります。そのときはこの値を上げるか、イヤホンを使ってください。</div>
+    <label><input id="s_aizuchi" type="checkbox"> 話の途中で相づちを打つ</label>
+    <label><input id="s_speculative" type="checkbox"> 話し終わる前から返事を準備する(速くなる)</label>
+    <label><input id="s_localStt" type="checkbox"> 音声認識も端末の中で行う(対応しているAndroidのChromeのみ)</label>
+    <label><input id="s_search" type="checkbox"> 「〜って何？」などはWikipediaで調べる</label>
+    <div class="btns"><button id="closeBtn">閉じる</button><button id="saveBtn">保存</button></div>
+    <button id="resetBtn">会話の記録を消す</button>
+  </div>
+</div>
+
+<div id="loading"><div class="lbox"><div class="t">AIを準備中…</div><div id="loadText"></div><div class="pbar"><div id="pfill"></div></div><div class="hint2">初回だけダウンロードがあります。次からはすぐ起動します。</div></div></div>
+<div id="toast"></div>
+<script type="module">
+(() => {
+'use strict';
+
+/* ============ 設定 ============ */
+const DEFAULT_PERSONA =
+`明るくて少しおっとりした、聞き上手な女の子のAI。
+一人称は「わたし」。タメ口で、やわらかい口調。
+相手の話に興味をもって、ときどき短い質問を返す。知ったかぶりはしない。`;
+
+const DEFAULTS = {
+  model: 'auto', userName: '', setupDone: false,
+  name: 'Luna', persona: DEFAULT_PERSONA, voiceURI: '',
+  rate: 1.15, pitch: 1.15, endMs: 750, sens: 2.8, barge: 2.6,
+  aizuchi: true, speculative: true, localStt: false, search: true
+};
+const STORE_KEY = 'hiyori-local-settings';
+const HIST_KEY = 'hiyori-local-history';
+const HIST_TURNS = 12;   // 小さいモデルなので直近だけ覚える(速さ優先)
+let S = loadSettings();
+if (/^あなたは「ひより」/.test(S.persona)) S.persona = DEFAULT_PERSONA;
+function loadSettings(){
+  try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); }
+  catch(e){ return Object.assign({}, DEFAULTS); }
+}
+function saveSettings(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(S)); }catch(e){} }
+
+const EARLY_MS = 350;            // 投機的に返事を作り始める沈黙
+const AIZUCHI = ['うん','うんうん','へぇ','なるほど','そっか','うん、うん','ほう'];
+
+/* ============ 便利関数 ============ */
+const $ = s => document.querySelector(s);
+const now = () => performance.now();
+const norm = s => (s || '').replace(/[\s、。，．,.!！?？「」『』…ー〜~]/g, '');
+let toastTimer;
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
+}
+function setState(st){
+  document.body.dataset.state = st;
+  const label = { idle:'下のボタンで通話スタート', listening:'きいてるよ', thinking:'かんがえ中…', speaking:'おしゃべり中(話しかけると止まるよ)' }[st];
+  $('#status').textContent = label || '';
+}
+
+let bubbleTimer;
+function showBubble(text){
+  const b = $('#bubble'); b.textContent = text; b.classList.add('show');
+  clearTimeout(bubbleTimer); bubbleTimer = setTimeout(() => b.classList.remove('show'), 4000 + text.length * 120);
+}
+
+/* ============ 会話ログ・履歴 ============ */
+let history = [];
+try { history = JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch(e){ history = []; }
+function saveHistory(){
+  if (history.length > 40) history = history.slice(-40);
+  try{ localStorage.setItem(HIST_KEY, JSON.stringify(history)); }catch(e){}
+}
+function pushHistory(role, content){ history.push({ role, content }); saveHistory(); }
+function buildMessages(extra, memo){
+  const all = history.concat(extra || []).slice(-HIST_TURNS);
+  if (memo) all.push({ role:'user', content: memo });
+  const out = [];
+  for (const m of all){
+    if (out.length && out[out.length-1].role === m.role) out[out.length-1].content += '\n' + m.content;
+    else out.push({ role: m.role, content: m.content });
+  }
+  if (out.length && out[0].role !== 'user') out.shift();
+  if (!out.length) out.push({ role:'user', content:'（メモ）通話が始まった。' });
+  if (out[out.length-1].role !== 'user') out.push({ role:'user', content:'（メモ）会話を続けて。' });
+  return out;
+}
+const logEl = $('#log');
+function scrollLog(){ logEl.scrollTop = logEl.scrollHeight; }
+function addMsg(cls, text){
+  const d = document.createElement('div'); d.className = 'msg ' + cls; d.textContent = text;
+  logEl.appendChild(d); scrollLog(); return d;
+}
+function addNote(text, cls){
+  const d = document.createElement('div'); d.className = 'note ' + (cls || ''); d.textContent = text;
+  logEl.appendChild(d); scrollLog(); return d;
+}
+function renderOldHistory(){
+  for (const m of history.slice(-20)){
+    if (m.content.startsWith('（システム）') || m.content.startsWith('（メモ）')) continue;
+    if (m.role === 'user') addMsg('user', m.content);
+    else addMsg('ai', m.content.replace('…[遮られた]', '…'));
+  }
+  if (history.length) addNote('— 前回の続き —');
+}
+
+/* ============ プロンプト ============ */
+function systemPrompt(){
+  const t = new Date().toLocaleDateString('ja-JP', { dateStyle:'full' });
+  return `${S.persona}
+あなたの名前は「${S.name}」。相手のことは「${S.userName || 'きみ'}」と呼ぶ。今日は${t}。
+これは音声通話です。次のルールを必ず守ってください。
+・返事は話し言葉で、1〜2文の短さにする。
+・箇条書き、記号、絵文字、英語の見出しは使わない。
+・自分の発言の最後に「[遮られた]」があるときは、相手に話を遮られている。同じ話をくり返さず、相手の新しい話に答える。
+・「（メモ）」で始まる文は相手の発言ではなく、あなたへの参考情報。メモがあることには触れない。
+・知らないことは知らないと正直に言う。`;
+}
+
+/* ============ 端末内AI(WebLLM) ============ */
+const WL_URLS = [
+  'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.88/lib/index.js',
+  'https://unpkg.com/@mlc-ai/web-llm@0.2.88/lib/index.js',
+  'https://esm.run/@mlc-ai/web-llm@0.2.88'
+];
+let WL = WL_URLS[0];
+async function loadWebLLM(){
+  let last;
+  for (const u of WL_URLS){
+    try { const m = await import(u); WL = u; return m; } catch(e){ last = e; }
+  }
+  throw new Error('AIの部品を読み込めませんでした。ネットにつながっているか確認して、Chromeなどのブラウザで開いてね(アプリ内のプレビューでは動きません)');
+}
+let webllm = null, engine = null, engineModel = '', engineLoading = null, worker = null;
+function showLoad(on, text, p){
+  $('#loading').classList.toggle('show', !!on);
+  if (text != null) $('#loadText').textContent = text;
+  if (p != null) $('#pfill').style.width = Math.round(p * 100) + '%';
+}
+async function pickModelId(){
+  if (!navigator.gpu) throw new Error('このブラウザはWebGPUに対応していません。AndroidならChromeを最新版にしてください(iPhoneはiOS 26以降のSafari)');
+  const ad = await navigator.gpu.requestAdapter();
+  if (!ad) throw new Error('GPUが使えませんでした。ブラウザを再起動してみてね');
+  const f16 = ad.features.has('shader-f16');
+  let m = S.model;
+  if (m === 'auto'){
+    const mem = navigator.deviceMemory || 4;           // 端末のメモリ(GB・目安)
+    m = mem >= 8 ? 'gemma-2-2b-jpn-it' : 'gemma3-1b-it';
+  }
+  if (m === 'gemma3-1b-it') return f16 ? 'gemma3-1b-it-q4f16_1-MLC' : 'Qwen3-0.6B-q4f32_1-MLC';
+  return m + (f16 ? '-q4f16_1-MLC' : '-q4f32_1-MLC');
+}
+async function ensureEngine(){
+  const id = await pickModelId();
+  if (engine && engineModel === id) return engine;
+  if (engineLoading) return engineLoading;
+  engineLoading = (async () => {
+    showLoad(true, 'AIを準備中…', 0);
+    const cb = r => showLoad(true, (r.text || '').replace(/Fetching param cache/i, 'ダウンロード中').replace(/Loading model from cache/i, '読み込み中'), r.progress || 0);
+    webllm = webllm || await loadWebLLM();
+    if (engine){
+      engine.setInitProgressCallback && engine.setInitProgressCallback(cb);
+      await engine.reload(id);
+    } else {
+      // まず別スレッド(ワーカー)で動かす。作れない環境なら画面と同じスレッドで動かす
+      worker = null;
+      try {
+        const src = `import { WebWorkerMLCEngineHandler } from '${WL}'; const h = new WebWorkerMLCEngineHandler(); self.onmessage = m => h.onmessage(m);`;
+        worker = new Worker(URL.createObjectURL(new Blob([src], { type:'text/javascript' })), { type:'module' });
+      } catch(e){ worker = null; }
+      if (worker){
+        try {
+          engine = await Promise.race([
+            webllm.CreateWebWorkerMLCEngine(worker, id, { initProgressCallback: cb }),
+            new Promise((_, rej) => worker.addEventListener('error', () => rej(new Error('worker'))))
+          ]);
+        } catch(e){
+          try { worker.terminate(); } catch(_){}
+          worker = null; engine = null;
+          if (!e || e.message !== 'worker') throw e;
+        }
+      }
+      if (!engine) engine = await webllm.CreateMLCEngine(id, { initProgressCallback: cb });
+    }
+    engineModel = id;
+    return engine;
+  })();
+  try { return await engineLoading; }
+  finally { engineLoading = null; showLoad(false); }
+}
+
+/* ============ 調べもの(Wikipedia・キー不要) ============ */
+function detectQuery(text){
+  const t = text.replace(/[。、！？!?\s]/g, '');
+  let m = t.match(/^(?:ねえ|ねぇ|あの|えっと)?(.{2,24}?)(?:って|とは|ってのは|っていうのは)(?:何|なに|なん|誰|だれ|どこ|どんな)/);
+  if (!m) m = t.match(/^(?:ねえ|ねぇ|あの|えっと)?(.{2,24}?)(?:について|のこと|を|のことを)(?:調べて|教えて|知ってる)/);
+  if (!m) m = t.match(/^(.{2,24}?)(?:を|について)?(?:検索して|ググって)/);
+  if (!m) return null;
+  const q = m[1].replace(/^(?:じゃあ|それで|ところで)/, '');
+  if (q.length < 2 || q === S.name || /^(きみ|君|あなた|わたし|私|僕|ぼく|俺|おれ|これ|それ|あれ|今日|明日|昨日|今|好き|趣味)$/.test(q)) return null;
+  return q;
+}
+async function wikiLookup(q){
+  const base = 'https://ja.wikipedia.org';
+  const s = await fetch(`${base}/w/api.php?action=query&list=search&srlimit=1&format=json&origin=*&srsearch=${encodeURIComponent(q)}`).then(r => r.json());
+  const hit = s && s.query && s.query.search && s.query.search[0];
+  if (!hit) return null;
+  const p = await fetch(`${base}/api/rest_v1/page/summary/${encodeURIComponent(hit.title)}`).then(r => r.json());
+  const ex = (p.extract || '').split('。').slice(0, 3).join('。');
+  return ex ? { title: hit.title, text: ex + '。' } : null;
+}
+
+/* ============ 音声合成(TTS) ============ */
+const synth = window.speechSynthesis;
+let voices = [];
+function loadVoices(){
+  if (!synth) return;
+  voices = synth.getVoices().filter(v => /^ja/i.test(v.lang));
+  const sel = $('#s_voiceURI'); sel.innerHTML = '';
+  const o0 = document.createElement('option'); o0.value = ''; o0.textContent = '端末のおまかせ'; sel.appendChild(o0);
+  for (const v of voices){ const o = document.createElement('option'); o.value = v.voiceURI; o.textContent = v.name; sel.appendChild(o); }
+  sel.value = S.voiceURI;
+}
+if (synth){ loadVoices(); synth.onvoiceschanged = loadVoices; }
+function pickVoice(){ return voices.find(v => v.voiceURI === S.voiceURI) || voices[0] || null; }
+function makeUtter(text, opt){
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ja-JP'; const v = pickVoice(); if (v) u.voice = v;
+  u.rate = (opt && opt.rate) || S.rate; u.pitch = S.pitch; u.volume = (opt && opt.volume) || 1;
+  return u;
+}
+
+let ttsQueue = [], ttsBusy = false, curUtter = null, utterStart = 0, aizuchiUntil = 0;
+let recentSpoken = '';   // エコー判定用
+function ttsEnqueue(text, g){ ttsQueue.push({ text, g }); if (!ttsBusy) ttsNext(); }
+function ttsNext(){
+  const item = ttsQueue.shift();
+  if (!item){ ttsBusy = false; curUtter = null; onTtsDrained(); return; }
+  ttsBusy = true;
+  const u = makeUtter(item.text); curUtter = u; u._item = item; utterStart = now();
+  u.onstart = () => spokeSentence(item);
+  const fin = () => { if (u._done || u._cancelled) return; u._done = true; if (!u._started) spokeSentence(item); ttsNext(); };
+  u.onend = fin; u.onerror = fin;
+  setState('speaking');
+  synth.speak(u);
+}
+function spokeSentence(item){
+  const u = curUtter; if (u) u._started = true;
+  const g = item.g;
+  if (g.spoken.includes(item)) return;
+  g.spoken.push(item);
+  recentSpoken = (recentSpoken + item.text).slice(-80);
+  if (!g.el){ g.el = addMsg('ai', ''); }
+  g.el.textContent = g.spoken.map(x => x.text).join('');
+  scrollLog();
+  showBubble(item.text);
+}
+function ttsStop(){
+  ttsQueue = [];
+  if (curUtter) curUtter._cancelled = true;
+  curUtter = null; ttsBusy = false;
+  try { synth.cancel(); } catch(e){}
+}
+function aiSpeakingNow(){ return ttsBusy || now() < aizuchiUntil; }
+
+/* ============ 返事の生成(ジェネレーション) ============ */
+let gen = null, genSeq = 0, runChain = Promise.resolve();
+const pendingResults = [];
+
+function startGen(userText, committed, memo){
+  const g = { id: ++genSeq, raw:'', consumed:0, pending:[], committed, cancelled:false,
+              done:false, spoken:[], userText, firstOut:false, finalized:false, el:null };
+  gen = g;
+  const extra = userText != null ? [{ role:'user', content:userText }] : [];
+  let msgs = buildMessages(extra, memo);
+  if (/^gemma/.test(engineModel || S.model) || S.model === 'auto'){
+    // Gemmaはsystem役割が弱いので、最初の発言の頭に設定を入れる
+    msgs = msgs.map((m, i) => i === 0 ? { role: m.role, content: systemPrompt() + '\n\n' + m.content } : m);
+  } else msgs = [{ role:'system', content: systemPrompt() }].concat(msgs);
+  if (committed) setState('thinking');
+  runChain = runChain.then(() => runGen(g, msgs)).catch(() => {});
+  return g;
+}
+async function runGen(g, msgs){
+  if (g.cancelled) return;
+  try {
+    const eng = await ensureEngine();
+    if (g.cancelled) return;
+    const req = { messages: msgs, stream: true, max_tokens: 160, temperature: 0.7, top_p: 0.9, frequency_penalty: 0.3 };
+    if (/^Qwen/.test(engineModel)) req.extra_body = { enable_thinking: false };
+    const chunks = await eng.chat.completions.create(req);
+    for await (const c of chunks){
+      if (g.cancelled) break;
+      const d = c.choices && c.choices[0] && c.choices[0].delta && c.choices[0].delta.content;
+      if (d){ g.raw += d; processRaw(g, false); }
+    }
+    if (g.cancelled) return;
+    processRaw(g, true); g.done = true;
+    if (g.committed && !ttsBusy && !ttsQueue.length) finalizeGen(g, false);
+  } catch(e){
+    if (g.cancelled) return;
+    g.done = true; toast('エラー: ' + (e.message || e));
+    if (g.committed){ if (!ttsBusy && !ttsQueue.length) finalizeGen(g, false); }
+    else if (gen === g) gen = null;
+  }
+}
+function cleanRaw(s){ return s.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/^\s*(?:[^\s:：]{1,8})[:：]\s*/, ''); }
+function processRaw(g, final){
+  let clean = cleanRaw(g.raw);
+  if (!final){
+    const lt = clean.lastIndexOf('<');
+    if (lt >= 0 && clean.indexOf('>', lt) < 0) clean = clean.slice(0, lt);   // 書きかけのタグは保留
+  } else clean = clean.replace(/<\/?think>?/g, '');
+  for (;;){
+    const rest = clean.slice(g.consumed); if (!rest) break;
+    let n = -1;
+    const mm = rest.match(/[。！？!?\n]+|…+/);
+    if (mm) n = mm.index + mm[0].length;
+    else if (!g.firstOut && rest.length >= 12){ const c = rest.indexOf('、', 6); if (c >= 0) n = c + 1; }  // 1文目は早めに区切る
+    if (n < 0){ if (final) n = rest.length; else break; }
+    const piece = rest.slice(0, n); g.consumed += n;
+    const say = piece.replace(/[*#`_>|]/g, '').replace(/\[遮られた\]/g, '').trim();
+    if (say){ g.firstOut = true; if (g.committed) ttsEnqueue(say, g); else g.pending.push(say); }
+  }
+}
+function finalizeGen(g, interrupted){
+  if (g.finalized) return; g.finalized = true;
+  let text = g.spoken.map(x => x.text).join('');
+  if (interrupted){
+    text += '…[遮られた]';
+    if (g.el){ const s = document.createElement('span'); s.className = 'cut'; s.textContent = '(遮られた)'; g.el.appendChild(s); }
+  } else if (!text){
+    text = cleanRaw(g.raw).trim() || '…';
+  }
+  pushHistory('assistant', text);
+  if (gen === g) gen = null;
+  if (!interrupted) clearRec(true);
+  setState(running ? 'listening' : 'idle');
+}
+function onTtsDrained(){
+  if (!gen){ clearRec(true); return; }
+  if (gen && gen.committed){
+    if (gen.done) finalizeGen(gen, false);
+    else setState('thinking');
+  }
+}
+function commitUser(text){
+  pushHistory('user', text); addMsg('user', text); clearRec(false);
+  const q = S.search ? detectQuery(text) : null;
+  if (q){
+    // 調べものが必要 → 推測で答えさせず、先に「調べるね」と言ってから結果つきで返事を作る
+    if (gen) abortGen(gen);
+    const holder = { id: ++genSeq, spoken:[], el:null };
+    ttsEnqueue(['ちょっと調べてみるね。','えっと、調べてみるね。','うーん、ちょっと待ってね。'][Math.floor(Math.random()*3)], holder);
+    launchSearch(q);
+    setState('thinking');
+    return;
+  }
+  if (gen && !gen.committed){
+    const g = gen; g.committed = true; setState('thinking');
+    const p = g.pending; g.pending = [];
+    p.forEach(s => ttsEnqueue(s, g));
+    if (g.done && !ttsBusy && !ttsQueue.length) finalizeGen(g, false);
+  } else {
+    if (gen) abortGen(gen);
+    startGen(null, true);
+  }
+}
+function abortGen(g){
+  g.cancelled = true;
+  try { engine && engine.interruptGenerate(); } catch(e){}
+  if (gen === g) gen = null;
+}
+function bargeIn(){
+  const g = gen; if (!g) return;
+  ttsStop(); abortGen(g);
+  finalizeGen(g, true);
+}
+function launchSearch(q){
+  const note = addNote(`🔍「${q}」をWikipediaで調べ中…`, 'search');
+  wikiLookup(q).then(r => {
+    note.textContent = r ? `🔍「${r.title}」が見つかった` : `🔍「${q}」は見つからなかった`;
+    pendingResults.push({ q, r });
+  }).catch(() => {
+    note.textContent = `🔍 調べられなかった(オフライン?)`;
+    pendingResults.push({ q, r: null });
+  });
+}
+function deliverResult(){
+  const { q, r } = pendingResults.shift();
+  const memo = r
+    ? `（メモ）「${q}」を調べた結果：${r.text} これをもとに、相手にわかりやすく話し言葉で短く伝えて。`
+    : `（メモ）「${q}」は調べても見つからなかった。正直にそう伝えて。`;
+  startGen(null, true, memo);
+}
+
+/* ============ 音声認識(STT) ============ */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let useLocalStt = false;
+let rec = null, recWanted = false, finalText = '', interimText = '', skipUpTo = 0, lastResLen = 0;
+let lastResultTime = -1e9, ignoreRecUntil = 0;
+function isEcho(t){
+  const a = norm(t); if (!a) return true;
+  if (!aiSpeakingNow() && now() > ignoreRecUntil + 600) return false;
+  const b = norm(recentSpoken); if (!b) return false;
+  if (a.length < 2) return true;
+  let hit = 0;
+  for (let i = 0; i < a.length - 1; i++) if (b.includes(a.slice(i, i + 2))) hit++;
+  return hit / (a.length - 1) > 0.5;
+}
+function initRec(){
+  rec = new SR(); rec.lang = 'ja-JP'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+  if (useLocalStt && 'processLocally' in rec) rec.processLocally = true;
+  rec.onstart = () => { skipUpTo = 0; lastResLen = 0; };
+  rec.onresult = e => {
+    lastResLen = e.results.length;
+    const before = finalText + interimText;
+    let interim = '';
+    for (let i = Math.max(e.resultIndex, skipUpTo); i < e.results.length; i++){
+      const r = e.results[i]; const t = r[0].transcript;
+      if (r.isFinal){
+        if (now() < ignoreRecUntil) continue;
+        if (aiSpeakingNow() && isEcho(t)) continue;
+        finalText += t;
+      } else interim += t;
+    }
+    if (now() < ignoreRecUntil || (aiSpeakingNow() && isEcho(interim))) interim = '';
+    interimText = interim;
+    if (finalText + interimText !== before && (finalText + interimText).trim()) lastResultTime = now();
+    $('#live').textContent = (finalText + interimText).trim();
+  };
+  rec.onerror = e => {
+    if (useLocalStt && (e.error === 'language-not-supported' || e.error === 'service-not-allowed')){
+      useLocalStt = false; try { rec.processLocally = false; } catch(_){}
+      toast('端末内の音声認識が使えないので、通常の音声認識に切り替えたよ'); return;
+    }
+    if (e.error === 'network'){ toast('音声認識に通信が必要です。設定で「端末の中で行う」を試してね'); return; }
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+      recWanted = false; toast('音声認識が許可されていません。ブラウザの設定でマイクを許可してね');
+    }
+  };
+  rec.onend = () => { if (recWanted) setTimeout(() => { try { rec.start(); } catch(err){} }, 120); };
+}
+function clearRec(ignoreEcho){
+  finalText = ''; interimText = ''; skipUpTo = lastResLen; $('#live').textContent = '';
+  if (ignoreEcho) ignoreRecUntil = now() + 300;
+}
+
+/* ============ マイク音量(VAD) ============ */
+let mediaStream = null, actx = null, analyser = null, abuf = null;
+let noiseFloor = 0.01, lastVoiceTime = -1e9, voiceStart = 0;
+function readLevel(){
+  if (!analyser) return 0;
+  analyser.getFloatTimeDomainData(abuf);
+  let s = 0; for (let i = 0; i < abuf.length; i++) s += abuf[i] * abuf[i];
+  return Math.sqrt(s / abuf.length);
+}
+
+/* ============ メインループ ============ */
+let running = false, loopId = 0, lastAizuchi = 0, aizuchiMark = 0, mouthT = 0;
+function doAizuchi(){
+  const w = AIZUCHI[Math.floor(Math.random() * AIZUCHI.length)];
+  const u = makeUtter(w, { rate: Math.min(1.8, S.rate * 1.1), volume: 0.8 });
+  aizuchiUntil = now() + 700 + w.length * 120;
+  recentSpoken = (recentSpoken + w).slice(-80);
+  try { synth.speak(u); } catch(e){}
+  const b = $('#aizuchiBubble'); b.textContent = w; b.classList.add('show');
+  document.body.classList.remove('nod'); void document.body.offsetWidth; document.body.classList.add('nod');
+  setTimeout(() => { b.classList.remove('show'); document.body.classList.remove('nod'); }, 900);
+}
+function tick(){
+  const t = now();
+  const level = readLevel();
+  const speaking = aiSpeakingNow();
+  const base = Math.max(noiseFloor * S.sens, 0.006);
+  const thr = base * (speaking ? S.barge : 1);
+  const voiced = analyser ? level > thr : false;
+  if (analyser && !voiced && !speaking) noiseFloor = Math.max(0.002, noiseFloor * 0.97 + level * 0.03);
+  if (voiced){ if (!voiceStart) voiceStart = t; lastVoiceTime = t; }
+  else if (t - lastVoiceTime > 150) voiceStart = 0;
+  const voiceDur = voiceStart ? t - voiceStart : 0;
+
+  // 表示
+  document.body.style.setProperty('--lvl', Math.min(1, level / (base * 3)).toFixed(2));
+  $('#meterBar').style.width = Math.min(100, level / (base * 3) * 100) + '%';
+  $('#meterThr').style.left = Math.min(100, thr / (base * 3) * 100) + '%';
+  if (speaking && t - mouthT > 95){
+    mouthT = t; const r = Math.random();
+    document.body.classList.toggle('mouth', r < 0.45);
+    document.body.classList.toggle('mouth-i', r >= 0.45 && r < 0.65);
+  } else if (!speaking) document.body.classList.remove('mouth', 'mouth-i');
+  document.body.style.setProperty('--glow', analyser ? Math.min(1, level / (base * 2.5)).toFixed(2) : 0);
+
+  // TTSのonendが来ない端末向けの保険
+  if (ttsBusy && curUtter && t - utterStart > 600 && !synth.speaking && !synth.pending){
+    const u = curUtter; if (!u._done && !u._cancelled){ u._done = true; if (!u._started) spokeSentence(u._item); ttsNext(); }
+  }
+
+  const text = (finalText + interimText).trim();
+
+  // --- 割り込み(バージイン) ---
+  if (gen && gen.committed && !gen.finalized){
+    const heard = text.length >= 2;
+    if ((ttsBusy && (voiceDur > 350 || heard)) || (!ttsBusy && (voiceDur > 300 || heard))){
+      bargeIn(); return;
+    }
+  }
+
+  // --- ユーザーのターン ---
+  if (!gen || !gen.committed){
+    if (text){
+      const vadTrust = analyser && (t - lastResultTime) < 2500;
+      const silence = vadTrust ? Math.min(t - lastVoiceTime, t - lastResultTime) : t - lastResultTime;
+
+      // 投機的に作った返事がもう合わない → 捨てる
+      if (gen && !gen.committed){
+        if (norm(text).length > norm(gen.userText).length + 1 || voiceDur > 200) abortGen(gen);
+      }
+      // 相づち
+      if (S.aizuchi && !speaking && silence > 200 && silence < 330 && t - lastAizuchi > 3500 &&
+          norm(text).length - aizuchiMark >= 10){
+        const cont = /(て|で|けど|から|ので|し|たら|ね|さ|んだ|けれど|って)$/.test(norm(text));
+        if (cont || Math.random() < 0.3) doAizuchi();
+        lastAizuchi = t; aizuchiMark = norm(text).length;
+      }
+      // 話し終わる前から返事を準備
+      if (S.speculative && !gen && silence > EARLY_MS && silence < S.endMs) startGen(text, false);
+      // ターン確定
+      if (silence > S.endMs){ aizuchiMark = 0; commitUser(text); return; }
+    }
+  }
+
+  // --- 調べ物の結果を、話が途切れたタイミングで伝える ---
+  if (pendingResults.length && !gen && !ttsBusy && !text && t - lastVoiceTime > 1500 && t - lastResultTime > 1500){
+    deliverResult();
+  }
+}
+
+/* ============ 通話の開始・終了 ============ */
+async function prepareLocalStt(){
+  useLocalStt = false;
+  if (!SR || !S.localStt) return;
+  try {
+    if (SR.available){
+      const st = await SR.available({ langs:['ja-JP'], processLocally:true });
+      if (st === 'downloadable' || st === 'downloading'){
+        toast('端末内の音声認識(日本語)を準備中…');
+        await SR.install({ langs:['ja-JP'], processLocally:true });
+        useLocalStt = true;
+      } else if (st === 'available') useLocalStt = true;
+      else toast('この端末は端末内の音声認識に未対応なので、通常の音声認識を使うね');
+    } else toast('このブラウザは端末内の音声認識に未対応なので、通常の音声認識を使うね');
+  } catch(e){ useLocalStt = false; }
+}
+async function startCall(){
+  if (!synth){ toast('このブラウザは音声読み上げに対応していません'); }
+  try { synth && synth.speak(makeUtter('')); } catch(e){}   // iOSの読み上げロック解除
+  running = true; document.body.classList.add('running'); $('#callIcon').textContent = '✕'; $('#callLabel').textContent = 'おわる';
+  setState('thinking');
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true } });
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = actx.createMediaStreamSource(mediaStream);
+    analyser = actx.createAnalyser(); analyser.fftSize = 1024; abuf = new Float32Array(analyser.fftSize);
+    src.connect(analyser);
+  } catch(e){
+    analyser = null; toast('音量検出なしで動きます(割り込みは文字認識で判定)');
+  }
+  try { await ensureEngine(); }
+  catch(e){ toast('AIを起動できませんでした: ' + (e.message || e)); stopCall(); return; }
+  if (!running) return;
+  await prepareLocalStt();
+  if (SR){ recWanted = true; initRec(); try { rec.start(); } catch(e){} }
+  else toast('このブラウザは音声認識に未対応です。文字入力で話せます(AndroidのChrome推奨)');
+  setState('listening');
+  clearInterval(loopId); loopId = setInterval(tick, 40);
+  startGen(null, true, '（メモ）通話が始まった。ひとことで明るく挨拶して。');
+}
+function stopCall(){
+  running = false; recWanted = false;
+  try { rec && rec.abort(); } catch(e){}
+  if (gen) abortGen(gen); ttsStop();
+  clearInterval(loopId); loopId = 0;
+  if (mediaStream) mediaStream.getTracks().forEach(tr => tr.stop());
+  try { actx && actx.close(); } catch(e){}
+  mediaStream = null; actx = null; analyser = null;
+  document.body.classList.remove('running', 'mouth', 'mouth-i'); $('#callIcon').textContent = '📞'; $('#callLabel').textContent = 'おはなしする';
+  $('#live').textContent = ''; setState('idle');
+}
+
+/* ============ テキスト入力 ============ */
+function sendText(){
+  const v = $('#textIn').value.trim(); if (!v) return;
+  $('#textIn').value = '';
+  if (gen && gen.committed) bargeIn();
+  if (gen && !gen.committed) abortGen(gen);
+  try { synth && synth.speak(makeUtter('')); } catch(e){}
+  if (!running) loopId = loopId || setInterval(tick, 40);
+  commitUser(v);
+}
+
+/* ============ 設定画面 ============ */
+const FIELDS = ['model','name','userName','persona','voiceURI','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
+function openSettings(){
+  for (const k of FIELDS){
+    const el = $('#s_' + k); if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!S[k]; else el.value = S[k];
+  }
+  updateVals(); $('#settings').classList.add('open');
+}
+function updateVals(){ ['rate','pitch','endMs','sens','barge'].forEach(k => { $('#v_' + k).textContent = $('#s_' + k).value; }); }
+function saveFromForm(){
+  for (const k of FIELDS){
+    const el = $('#s_' + k); if (!el) continue;
+    if (el.type === 'checkbox') S[k] = el.checked;
+    else if (el.type === 'range') S[k] = parseFloat(el.value);
+    else S[k] = el.value.trim ? (k === 'persona' ? el.value : el.value.trim()) : el.value;
+  }
+  if (!S.name) S.name = DEFAULTS.name;
+  if (!S.persona.trim()) S.persona = DEFAULT_PERSONA;
+  saveSettings(); applyName();
+  $('#settings').classList.remove('open'); toast('保存したよ');
+}
+function applyName(){
+  $('#nameTag').textContent = S.name;
+  document.title = S.name + 'とおはなし';
+  $('#welcomeName').textContent = S.name;
+}
+/* 名前を決める画面 */
+function openNaming(first){
+  $('#n_name').value = S.name;
+  $('#n_user').value = S.userName;
+  $('#namingTitle').textContent = first ? 'はじめまして！' : 'なまえを変える';
+  $('#naming').classList.add('open');
+  setTimeout(() => $('#n_name').focus(), 200);
+}
+function saveNaming(){
+  const n = $('#n_name').value.trim();
+  if (!n){ toast('なまえを入れてね'); return; }
+  S.name = n.slice(0, 16); S.userName = $('#n_user').value.trim().slice(0, 16); S.setupDone = true;
+  saveSettings(); applyName(); $('#naming').classList.remove('open');
+  toast(`よろしくね！ わたしは「${S.name}」だよ`);
+}
+$('#nameTag').onclick = () => openNaming(false);
+$('#n_save').onclick = saveNaming;
+$('#n_name').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) $('#n_user').focus(); });
+$('#n_user').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) saveNaming(); });
+$('#logBtn').onclick = () => $('#drawer').classList.toggle('open');
+$('#drawerClose').onclick = () => $('#drawer').classList.remove('open');
+
+$('#gear').onclick = openSettings;
+$('#closeBtn').onclick = () => $('#settings').classList.remove('open');
+$('#saveBtn').onclick = saveFromForm;
+$('#resetBtn').onclick = () => { history = []; saveHistory(); logEl.innerHTML = ''; toast('履歴を消したよ'); };
+['rate','pitch','endMs','sens','barge'].forEach(k => $('#s_' + k).addEventListener('input', updateVals));
+$('#callBtn').onclick = () => running ? stopCall() : startCall();
+$('#sendBtn').onclick = sendText;
+$('#textIn').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing){ e.preventDefault(); sendText(); } });
+document.addEventListener('visibilitychange', () => { if (document.hidden && running) stopCall(); });
+
+applyName(); renderOldHistory(); setState('idle');
+if (!S.setupDone) setTimeout(() => openNaming(true), 400);
+})();
+</script>
+</body>
+</html>
