@@ -510,6 +510,7 @@ body.l2d #char{display:none}
     <div class="row"><button type="button" class="btn" id="cloverPick">モデル(.onnx)を読み込む</button><span class="val" id="cloverStat">未読み込み</span></div>
     <input id="cloverFile" type="file" accept=".onnx" style="display:none">
     <div class="hint">clover_front.onnx を一度読み込むと、この端末に保存されて次からは自動で使われます。</div>
+    <label><input id="s_cloverGpu" type="checkbox"> Clover声の変換にGPUを使う(試験的・速くなることがある)</label>
     <label>Clover声の高さ(半音)</label>
     <div class="row"><input id="s_cloverPitch" type="range" min="-12" max="12" step="1"><span class="val" id="v_cloverPitch"></span></div>
     <label>端末の声(端末の読み上げを使うとき)</label>
@@ -520,7 +521,7 @@ body.l2d #char{display:none}
     <label>声の高さ</label>
     <div class="row"><input id="s_pitch" type="range" min="0.5" max="2" step="0.05"><span class="val" id="v_pitch"></span></div>
     <label>返事を始めるまでの間(ミリ秒)</label>
-    <div class="row"><input id="s_endMs" type="range" min="400" max="1600" step="50"><span class="val" id="v_endMs"></span></div>
+    <div class="row"><input id="s_endMs" type="range" min="300" max="1600" step="50"><span class="val" id="v_endMs"></span></div>
     <div class="hint">短いほど早く返事しますが、話の途中で返事しやすくなります。</div>
     <label>マイクの感度(小さいほど敏感)</label>
     <div class="row"><input id="s_sens" type="range" min="1.5" max="6" step="0.1"><span class="val" id="v_sens"></span></div>
@@ -617,9 +618,9 @@ const OLD_PERSONA = `明るくて少しおっとりした、聞き上手な女�
 const DEFAULTS = {
   model: 'auto', userName: '', setupDone: false,
   name: 'Luna', persona: DEFAULT_PERSONA, voiceURI: '',
-  rate: 1.1, pitch: 1.35, endMs: 650, sens: 2.8, barge: 2.6,
+  rate: 1.1, pitch: 1.35, endMs: 500, sens: 2.8, barge: 2.6,
   aiEngine: 'auto', ollamaModel: 'gemma3:1b', smartModel: 'gemma3:4b', ollamaUrl: 'http://localhost:11434',
-  voiceEngine: 'clover', cloverPitch: 0, homeCity: '', claudeKey: '', claudeModel: 'claude-sonnet-5-5', claudeChatModel: 'claude-haiku-5-5', asEngine: 'auto', avatar: 'live2d', l2dPreset: 'hiyori', l2dScale: 1.7, l2dY: 0, aizuchi: true, speculative: true, localStt: false, search: true
+  voiceEngine: 'clover', cloverPitch: 0, cloverGpu: false, homeCity: '', claudeKey: '', claudeModel: 'claude-sonnet-5-5', claudeChatModel: 'claude-haiku-5-5', asEngine: 'auto', avatar: 'live2d', l2dPreset: 'hiyori', l2dScale: 1.7, l2dY: 0, aizuchi: true, speculative: true, localStt: false, search: true
 };
 const STORE_KEY = 'hiyori-local-settings';
 const HIST_KEY = 'hiyori-local-history';
@@ -804,7 +805,7 @@ async function* ollamaStream(msgs, g){
   const ctl = new AbortController(); g.abortCtl = ctl;
   const res = await fetch(S.ollamaUrl.replace(/\/$/, '') + '/api/chat', { method: 'POST', signal: ctl.signal,
     body: JSON.stringify({ model: S.ollamaModel, messages: msgs, stream: true, keep_alive: '30m',
-      options: { num_predict: 60, temperature: 0.7 } }) });
+      options: { num_predict: 60, temperature: 0.7, num_ctx: 2048 } }) });
   if (!res.ok) throw new Error('Ollama ' + res.status);
   const rd = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
   for (;;){
@@ -888,6 +889,7 @@ async function ensurePiper(){
     if (S.voiceEngine === 'clover') await ensureClover().catch(() => null);
     neuralReady = true;
     for (const w of AIZUCHI.concat(FILLERS)) synthClip(w).catch(() => {});
+    setTimeout(warmQuick, 4000);
     return piper;
   })();
   try { return await piperLoading; }
@@ -991,11 +993,13 @@ async function ensureClover(bytes){
     if (!buf){ setCloverStat('未読み込み'); return null; }
     setCloverStat('準備中…');
     cloverOrt = cloverOrt || await import('onnxruntime-web');
-    const sess = await cloverOrt.InferenceSession.create(new Uint8Array(buf), { executionProviders: ['wasm'] });
+    let sess = null;
+    if (S.cloverGpu && navigator.gpu){ try { sess = await cloverOrt.InferenceSession.create(new Uint8Array(buf), { executionProviders: ['webgpu'] }); console.log('clover: webgpu'); } catch(e){ console.warn('clover webgpu失敗→wasm', e); } }
+    if (!sess) sess = await cloverOrt.InferenceSession.create(new Uint8Array(buf), { executionProviders: ['wasm'] });
     if (bytes) await idbPut('clover', buf).catch(() => {});
     clover = sess; setCloverStat('使えます');
     clipCache.clear();
-    if (neuralReady) for (const w of AIZUCHI.concat(FILLERS)) synthClip(w).catch(() => {});
+    quickWarmed = false; if (neuralReady){ for (const w of AIZUCHI.concat(FILLERS)) synthClip(w).catch(() => {}); setTimeout(warmQuick, 4000); }
     return clover;
   })();
   try { return await cloverLoading; }
@@ -1252,7 +1256,7 @@ function synthClip(text){
     buf.copyToChannel(a.samples, 0);
     return buf;
   })();
-  if (text.length <= 8) clipCache.set(text, p);
+  if (text.length <= 40){ clipCache.set(text, p); if (clipCache.size > 80) clipCache.delete(clipCache.keys().next().value); }
   return p;
 }
 function playBuf(buf, onend){
@@ -1476,8 +1480,49 @@ async function handOffToAssist(text){
     job.done = true;
   })();
 }
+
+/* ---- かんたんな言葉はAIを使わず即答(2秒以内) ---- */
+const QUICK = [
+  [/^(おはよ|おはー|おは$|グッドモーニング)/, ['おはよう！今日もよろしくね。', 'おはよ！よく眠れた？', 'おはよう。今日は何するの？']],
+  [/^(こんにちは|こんにちわ|こんちは|ちわ|やあ|やっほ|ハロー|はろー|ヤッホー)/, ['こんにちは！今日はどうしたの？', 'やっほー！来てくれてうれしい。', 'こんにちは。何か話そっか。']],
+  [/^(こんばんは|こんばんわ|ばんわ)/, ['こんばんは！今日もおつかれさま。', 'こんばんは。夜はゆっくりしようね。']],
+  [/^(おやすみ|寝る|ねる|もう寝|そろそろ寝)/, ['おやすみ！いい夢みてね。', 'おやすみなさい。また明日ね。']],
+  [/^(ばいばい|バイバイ|じゃあね|またね|また明日|さようなら|さよなら|じゃあまた)/, ['ばいばい！またね。', 'うん、またね！待ってるよ。']],
+  [/^(ありがと|あざす|サンキュ|さんきゅ|助かった|たすかった)/, ['どういたしまして！', 'えへへ、どういたしまして。', 'いいよいいよ、いつでも言ってね。']],
+  [/^(ただいま)/, ['おかえり！おつかれさま。', 'おかえりなさい！']],
+  [/^(いってきます|行ってきます|いってくる|行ってくる)/, ['いってらっしゃい！気をつけてね。', 'いってらっしゃい、がんばってね！']],
+  [/(名前|なまえ)(は|って|を|、)?(何|なに|なん|教えて|おしえて)/, [() => `わたしは${S.name}だよ。`, () => `${S.name}っていうの。よろしくね！`]],
+  [/^(元気|げんき|調子どう|ちょうしどう)/, [() => `元気だよ！${S.userName || 'きみ'}は？`, '元気元気！そっちはどう？']],
+  [/^(ねえ|ねぇ|なあ|おーい|おい|聞いてる|きいてる|いる[?？]?$)/, ['うん、聞いてるよ。どうしたの？', 'なになに？', 'うん、いるよ！']],
+  [/^(ひま|暇)/, ['じゃあおしゃべりしよ！何の話がいい？', 'わたしも！なんか話そ。']],
+  [/^(おつかれ|お疲れ|つかれた|疲れた)/, ['おつかれさま！ゆっくり休んでね。', 'がんばったね。ちょっと休憩しよ。']],
+  [/^(好き|すき)[?？!！]*$/, ['えっ、わたしも好きだよ！', 'ふふ、ありがと。わたしもだよ。']],
+  [/^(かわいい|可愛い)/, ['えへへ、ありがと！照れるな。', 'そんなこと言われると照れちゃう。']],
+  [/^(すごい|さすが|えらい)/, ['えへへ、ありがと！', 'でしょ？ふふん。']],
+  [/^(ごめん|すまん|わるい)/, ['気にしないで！大丈夫だよ。', 'ぜんぜん平気だよ。']],
+  [/^(うん|はい|そうだね|だね|なるほど|へえ|ふーん|そっか|おけ|オッケー|OK|了解|りょ)$/i, ['うん！', 'うんうん。', 'そっかそっか。']],
+];
+function normQ(t){ return t.replace(/[\s、。！!？?〜ー…~]/g, '').trim(); }
+function quickReply(text){
+  const t = normQ(text); if (!t || t.length > 14) return null;
+  for (const [re, ans] of QUICK) if (re.test(t)){ const a = ans[Math.floor(Math.random() * ans.length)]; return typeof a === 'function' ? a() : a; }
+  return null;
+}
+let quickWarmed = false;
+async function warmQuick(){
+  if (quickWarmed || !useNeural()) return; quickWarmed = true;
+  const phrases = []; for (const [, ans] of QUICK) for (const a of ans) if (typeof a === 'string') phrases.push(a);
+  for (const p of phrases){ if (!clipCache.has(p)){ try { await synthClip(p); } catch(e){} await new Promise(r => setTimeout(r, 400)); } }
+}
 function commitUser(text){
   pushHistory('user', text); addMsg('user', text); clearRec(false);
+  const qr = quickReply(text);
+  if (qr){
+    if (gen) abortGen(gen);
+    const holder = { id: ++genSeq, spoken:[], el:null };
+    pushHistory('assistant', qr); ttsEnqueue(qr, holder); setState('thinking');
+    return;
+  }
   if (detectTask(text)){ handOffToAssist(text); return; }
   if (S.search && liveAnswer(text)) return;
   const q = S.search ? detectQuery(text) : null;
@@ -2463,7 +2508,7 @@ function sendText(){
 }
 
 /* ============ 設定画面 ============ */
-const FIELDS = ['aiEngine','claudeKey','claudeModel','claudeChatModel','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','homeCity','persona','voiceURI','cloverPitch','avatar','l2dPreset','l2dScale','l2dY','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
+const FIELDS = ['aiEngine','claudeKey','claudeModel','claudeChatModel','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','homeCity','persona','voiceURI','cloverPitch','cloverGpu','avatar','l2dPreset','l2dScale','l2dY','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
 function openSettings(){
   for (const k of FIELDS){
     const el = $('#s_' + k); if (!el) continue;
