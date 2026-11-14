@@ -237,6 +237,10 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
 #asWeb.auto{opacity:.9}
 .asSrc{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .asSrc a{font-size:12px;background:#eefaf7;color:#2f7f73;border-radius:10px;padding:4px 9px;text-decoration:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.asFileChip{display:inline-flex;align-items:center;gap:4px;font-size:12px;background:#fff3e0;color:#8a5a1a;border-radius:10px;padding:4px 9px;max-width:100%}
+.asFileChip button{border:none;background:none;cursor:pointer;color:#c77;font-size:13px;padding:0 2px}
+#asFilesBox{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px}
+#asFilesBox:empty{display:none}
 #asSendBtn{width:42px;height:42px;flex:none;border:none;border-radius:50%;background:linear-gradient(135deg,#ff8fb6,#b9a6f5);color:#fff;font-size:17px;cursor:pointer}
 #asSendBtn.stop{background:#4b3d6e}
 .asFoot{text-align:center;margin-top:6px}
@@ -475,9 +479,18 @@ body.l2d #char{display:none}
     <textarea id="s_persona"></textarea>
     <label>キャラの見た目</label>
     <select id="s_avatar">
-      <option value="svg">はじめから入っているキャラ</option>
-      <option value="live2d">Live2Dモデル</option>
+      <option value="live2d">Live2Dキャラ(おすすめ)</option>
+      <option value="svg">シンプルなイラスト</option>
     </select>
+    <label>Live2Dのキャラ</label>
+    <select id="s_l2dPreset">
+      <option value="hiyori">桃瀬ひより(標準)</option>
+      <option value="haru">ハル</option>
+      <option value="mao">マオ</option>
+      <option value="rice">ライス</option>
+      <option value="custom">自分で読み込んだモデル</option>
+    </select>
+    <div class="hint">Live2D公式の無料サンプルモデルです(初回だけ約4MBダウンロード)。個人・小規模(年間売上1,000万円未満)の利用は無料です。</div>
     <div class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn" id="l2dZipBtn">zipを読み込む</button><button type="button" class="btn" id="l2dDirBtn">フォルダを読み込む(PC)</button><span class="val" id="l2dStat">未読み込み</span></div>
     <input id="l2dZip" type="file" accept=".zip,application/zip" style="display:none">
     <input id="l2dDir" type="file" webkitdirectory multiple style="display:none">
@@ -574,14 +587,15 @@ body.l2d #char{display:none}
       <div class="asComposer">
         <div id="asNote" class="hint"></div>
         <div id="asImgs"></div>
+        <div id="asFilesBox"></div>
         <div class="asBox">
-          <button id="asAttach" aria-label="画像をつける">📎</button>
+          <button id="asAttach" aria-label="ファイル・画像をつける" title="ファイル(PDF・Word・Excel・テキスト・コード)や画像をつける">📎</button>
           <button id="asWeb" aria-label="調べてから答える" title="調べてから答える(自動/オン/オフ)">🔎</button>
           <textarea id="asInput" rows="1" placeholder="お願いや質問を書いてね"></textarea>
           <button id="asSendBtn" aria-label="送信">➤</button>
         </div>
         <div class="hint asFoot">AIはまちがえることがあります。大事なことは確かめてね。</div>
-        <input id="asFile" type="file" accept="image/*" multiple hidden>
+        <input id="asFile" type="file" accept="image/*,.pdf,.docx,.pptx,.xlsx,.txt,.md,.csv,.tsv,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.c,.cpp,.h,.cs,.java,.go,.rs,.rb,.php,.sql,.sh,.bat" multiple hidden>
       </div>
     </div>
   </div>
@@ -605,7 +619,7 @@ const DEFAULTS = {
   name: 'Luna', persona: DEFAULT_PERSONA, voiceURI: '',
   rate: 1.1, pitch: 1.35, endMs: 650, sens: 2.8, barge: 2.6,
   aiEngine: 'auto', ollamaModel: 'gemma3:1b', smartModel: 'gemma3:4b', ollamaUrl: 'http://localhost:11434',
-  voiceEngine: 'clover', cloverPitch: 0, homeCity: '', claudeKey: '', claudeModel: 'claude-sonnet-5-5', claudeChatModel: 'claude-haiku-5-5', asEngine: 'auto', avatar: 'svg', l2dScale: 1.7, l2dY: 0, aizuchi: true, speculative: true, localStt: false, search: true
+  voiceEngine: 'clover', cloverPitch: 0, homeCity: '', claudeKey: '', claudeModel: 'claude-sonnet-5-5', claudeChatModel: 'claude-haiku-5-5', asEngine: 'auto', avatar: 'live2d', l2dPreset: 'hiyori', l2dScale: 1.7, l2dY: 0, aizuchi: true, speculative: true, localStt: false, search: true
 };
 const STORE_KEY = 'hiyori-local-settings';
 const HIST_KEY = 'hiyori-local-history';
@@ -1053,6 +1067,94 @@ function fitL2d(){
   m.x = (w - m.width) / 2;
   m.y = (S.l2dScale || 1) > 1.05 ? h * 0.03 + (S.l2dY || 0) / 100 * h : h - m.height + (S.l2dY || 0) / 100 * h;
 }
+
+/* ---- Live2D公式サンプル(無料素材ライセンス)を標準キャラとして使う ---- */
+const L2D_SAMPLE_BASE = 'https://cdn.jsdelivr.net/gh/Live2D/CubismWebSamples@b1de66b0b1f1cb881d95fb6158622aeb6a2827bd/Samples/Resources/';
+const L2D_PRESETS = {
+  hiyori: { name: 'Hiyori', label: '桃瀬ひより' },
+  haru:   { name: 'Haru',   label: 'ハル' },
+  mao:    { name: 'Mao',    label: 'マオ' },
+  rice:   { name: 'Rice',   label: 'ライス' },
+};
+async function fetchSample(key){
+  const p = L2D_PRESETS[key]; const dir = p.name + '/';
+  const base = L2D_SAMPLE_BASE + dir;
+  const jtxt = await fetch(base + p.name + '.model3.json').then(r => { if (!r.ok) throw new Error('モデルを取得できない'); return r.text(); });
+  const j = JSON.parse(jtxt), R = j.FileReferences || {};
+  const refs = new Set();
+  ['Moc', 'Physics', 'Pose', 'UserData', 'DisplayInfo'].forEach(k => R[k] && refs.add(R[k]));
+  (R.Textures || []).forEach(t => refs.add(t));
+  (R.Expressions || []).forEach(e => refs.add(e.File));
+  Object.values(R.Motions || {}).forEach(g => g.forEach(m => refs.add(m.File)));
+  const files = [{ path: dir + p.name + '.model3.json', blob: new Blob([jtxt], { type: 'application/json' }) }];
+  let done = 0; const all = [...refs];
+  await Promise.all(all.map(async ref => {
+    const b = await fetch(base + ref).then(r => { if (!r.ok) throw new Error('取得失敗: ' + ref); return r.blob(); });
+    files.push({ path: dir + ref, blob: b }); done++; setL2dStat(`ダウンロード中 ${done}/${all.length}`);
+  }));
+  return files;
+}
+async function loadPreset(key){
+  let files = await idbGet('l2d-' + key).catch(() => null);
+  if (!files){ files = await fetchSample(key); idbPut('l2d-' + key, files).catch(() => {}); }
+  return files;
+}
+
+/* ---- VTuberっぽい動き:表情・うなずき・体の揺れ・視線 ---- */
+let l2dEmotion = 'neutral', l2dEmotionT = 0, l2dPresetKey = null;
+const EMO_RE = [
+  ['happy', /(嬉し|うれし|やった|楽し|たのし|いいね|大好き|ありがと|わーい|やったー|へへ|ふふ|最高|さいこう|笑|たのしみ|楽しみ)/],
+  ['surprised', /(えっ|ええ|びっくり|まじ|マジ|ほんと[にう]?[！!?？]|うそ|すごい|すご[っー]|なんと|おお[！!]|わっ)/],
+  ['sad', /(悲し|かなし|ごめん|残念|つら|さみし|寂し|泣|しょんぼり|がっかり|うう)/],
+  ['angry', /(怒|おこ|むっ|もう[！!]|ひどい|やめて|プンプン|許さ)/],
+  ['shy', /(照れ|恥ずかし|はずかし|えへ|ドキドキ|どきどき|きゃー|やだもう)/],
+];
+function detectEmotion(text){ for (const [e, re] of EMO_RE) if (re.test(text)) return e; return null; }
+function setEmotion(e, ms){
+  l2dEmotion = e || 'neutral'; l2dEmotionT = Date.now() + (ms || 6000);
+  const m = l2dModel; if (!m) return;
+  const p = L2D_PRESETS[l2dPresetKey] || {};
+  const im = m.internalModel, defs = (im.settings && im.settings.expressions) || [];
+  if (defs.length){
+    let name = p.expr ? p.expr[l2dEmotion] : null;
+    if (!name && !p.expr && l2dEmotion !== 'neutral'){ const idx = { happy: 0, surprised: 1, sad: 2, angry: 3, shy: 4 }[l2dEmotion]; if (defs[idx]) name = defs[idx].Name || defs[idx].name; }
+    if (l2dEmotion === 'neutral' && !name){ try { im.motionManager.expressionManager && im.motionManager.expressionManager.resetExpression(); } catch(e){} }
+    else if (name) try { m.expression(name); } catch(e){}
+  }
+  if ((l2dEmotion === 'happy' || l2dEmotion === 'surprised') && Math.random() < 0.6){
+    const g = im.settings.motions || {}; const k = Object.keys(g).find(n => /tap/i.test(n)); if (k) try { m.motion(k, undefined, 2); } catch(e){}
+  }
+}
+function l2dTick(cm, lv){
+  const t = performance.now() / 1000, st = document.body.dataset.state;
+  if (l2dEmotion !== 'neutral' && Date.now() > l2dEmotionT) setEmotion('neutral');
+  const add = (id, v) => { try { cm.addParameterValueById(id, v); } catch(e){} };
+  // いつも:ゆっくり体と頭が揺れる
+  add('ParamAngleX', 5 * Math.sin(t * 0.55) + 2 * Math.sin(t * 1.31));
+  add('ParamAngleY', 2.5 * Math.sin(t * 0.83 + 1));
+  add('ParamAngleZ', 2 * Math.sin(t * 0.41));
+  add('ParamBodyAngleX', 3 * Math.sin(t * 0.47 + 0.5));
+  add('ParamBodyAngleZ', 1.5 * Math.sin(t * 0.37));
+  add('ParamEyeBallX', 0.15 * Math.sin(t * 0.29));
+  if (st === 'speaking' || lv > 0.01){
+    // 話すときは声に合わせて小さくうなずく
+    add('ParamAngleY', -lv * 60 + 2 * Math.sin(t * 5.2));
+    add('ParamAngleZ', lv * 25 * Math.sin(t * 3.1));
+    add('ParamBodyAngleY', -lv * 20);
+  } else if (st === 'listening'){
+    // 聞くときは少し前のめり・首をかしげる
+    add('ParamAngleY', 3); add('ParamAngleZ', 4 * Math.sin(t * 0.9)); add('ParamBodyAngleX', 2);
+  } else if (st === 'thinking'){
+    // 考えるときは視線を上に
+    add('ParamEyeBallY', 0.5); add('ParamEyeBallX', 0.3); add('ParamAngleZ', -6); add('ParamAngleX', 8);
+  }
+  if (l2dEmotion === 'happy'){ add('ParamMouthForm', 1); add('ParamAngleZ', 3 * Math.sin(t * 2)); add('ParamBodyAngleZ', 2 * Math.sin(t * 2)); }
+  if (l2dEmotion === 'sad'){ add('ParamMouthForm', -1); add('ParamAngleY', -8); add('ParamEyeBallY', -0.3); add('ParamBrowLY', -0.6); add('ParamBrowRY', -0.6); }
+  if (l2dEmotion === 'angry'){ add('ParamBrowLAngle', -1); add('ParamBrowRAngle', -1); add('ParamMouthForm', -0.6); add('ParamAngleY', -4); }
+  if (l2dEmotion === 'surprised'){ add('ParamEyeLOpen', 0.5); add('ParamEyeROpen', 0.5); add('ParamBrowLY', 0.8); add('ParamBrowRY', 0.8); add('ParamAngleY', 6); }
+  if (l2dEmotion === 'shy'){ add('ParamCheek', 1); add('ParamAngleY', -5); add('ParamAngleZ', 6); add('ParamEyeBallY', -0.3); add('ParamMouthForm', 0.6); }
+}
+
 async function startL2d(files){
   setL2dStat('読み込み中…');
   await l2dLibs(false);
@@ -1080,6 +1182,7 @@ async function startL2d(files){
     mouth += (target - mouth) * (target > mouth ? 0.6 : 0.3);
     const cm = m.internalModel.coreModel;
     for (const id of l2dMouthIds) try { cm.setParameterValueById(id, mouth); } catch(e){}
+    l2dTick(cm, lv);
   });
   document.body.classList.add('l2d');
   requestAnimationFrame(fitL2d); setTimeout(fitL2d, 300);
@@ -1087,10 +1190,15 @@ async function startL2d(files){
 }
 async function initL2d(){
   if (S.avatar !== 'live2d'){ document.body.classList.remove('l2d'); if (l2dApp) l2dApp.stop(); return; }
-  if (l2dModel){ document.body.classList.add('l2d'); l2dApp.start(); fitL2d(); return; }
-  const files = await idbGet('live2d').catch(() => null);
-  if (!files){ setL2dStat('未読み込み'); return; }
-  try { await startL2d(files); } catch(e){ console.warn(e); setL2dStat('表示できなかった'); toast('Live2Dモデルを表示できなかった: ' + e.message); }
+  const key = S.l2dPreset || 'hiyori';
+  if (l2dModel && l2dPresetKey === key){ document.body.classList.add('l2d'); l2dApp.start(); fitL2d(); return; }
+  try {
+    let files;
+    if (key === 'custom'){ files = await idbGet('live2d').catch(() => null); if (!files){ setL2dStat('未読み込み'); return; } }
+    else { setL2dStat('準備中…'); files = await loadPreset(key); }
+    l2dPresetKey = key;
+    await startL2d(files);
+  } catch(e){ console.warn(e); setL2dStat('表示できなかった'); toast('Live2Dモデルを表示できなかった: ' + e.message); }
 }
 async function onL2dFiles(list){
   if (!list || !list.length) return;
@@ -1099,7 +1207,7 @@ async function onL2dFiles(list){
     const files = await filesFromInput([...list]);
     await startL2d(files);
     await idbPut('live2d', files).catch(() => toast('モデルが大きくて端末に保存できなかった(今回だけ表示します)'));
-    S.avatar = 'live2d'; saveSettings(); const sel = $('#s_avatar'); if (sel) sel.value = 'live2d';
+    S.avatar = 'live2d'; S.l2dPreset = 'custom'; l2dPresetKey = 'custom'; saveSettings(); const sel = $('#s_avatar'); if (sel) sel.value = 'live2d'; const ps = $('#s_l2dPreset'); if (ps) ps.value = 'custom';
     toast('Live2Dキャラを読み込んだよ');
   } catch(e){ console.warn(e); setL2dStat('表示できなかった'); toast('Live2Dモデルを読み込めなかった: ' + e.message); }
 }
@@ -1161,6 +1269,7 @@ let ttsQueue = []
 let recentSpoken = '';   // エコー判定用
 function ttsEnqueue(text, g){
   const item = { text, g };
+  const emo = detectEmotion(text); if (emo) item.emo = emo;
   if (useNeural()) item.bufP = synthClip(text).catch(() => null);
   ttsQueue.push(item); if (!ttsBusy) ttsNext();
 }
@@ -1188,6 +1297,7 @@ function ttsNext(){
 }
 function spokeSentence(item){
   const u = curUtter; if (u) u._started = true;
+  if (item.emo) setEmotion(item.emo, 7000);
   const g = item.g;
   if (g.spoken.includes(item)) return;
   g.spoken.push(item);
@@ -1677,6 +1787,7 @@ try { asChats = JSON.parse(localStorage.getItem(AS_KEY) || '[]'); } catch(e){ as
 const AS_TEMPLATES = [
   ['✉️', 'メールを書く', '次の内容で、ていねいなメールを書いて。\n相手:\n用件:'],
   ['📝', '文章を要約する', '次の文章を、大事なところだけ3行で要約して。\n\n'],
+  ['📄', 'ファイルを要約', '📎でファイルをつけてから送ってね。\n\nこのファイルの要点を、見出しつきでまとめて。'],
   ['🔎', '調べてまとめる', '次のことを調べて、わかりやすくまとめて。\n調べたいこと:'],
   ['🌏', '翻訳する', '次の文章を自然な英語に翻訳して。\n\n'],
   ['💡', 'アイデアを出す', '〇〇のアイデアを10個出して。'],
@@ -1687,7 +1798,7 @@ const AS_TEMPLATES = [
 ];
 const EXT = { javascript:'js', js:'js', typescript:'ts', ts:'ts', python:'py', py:'py', html:'html', css:'css', java:'java', c:'c', cpp:'cpp', 'c++':'cpp', csharp:'cs', 'c#':'cs', cs:'cs', json:'json', bash:'sh', sh:'sh', shell:'sh', powershell:'ps1', ps1:'ps1', sql:'sql', go:'go', rust:'rs', kotlin:'kt', swift:'swift', php:'php', ruby:'rb', markdown:'md', md:'md', xml:'xml', yaml:'yml', yml:'yml', lua:'lua' };
 function asSave(){
-  try { localStorage.setItem(AS_KEY, JSON.stringify(asChats.slice(0, 60), (k, v) => (k === 'imgs' || k === 'b64' || k === 'aug') ? undefined : v)); }
+  try { localStorage.setItem(AS_KEY, JSON.stringify(asChats.slice(0, 60), (k, v) => (k === 'imgs' || k === 'b64' || k === 'aug' || k === 'fileText') ? undefined : v)); }
   catch(e){ toast('保存できる量をこえたので、古い会話を消してね'); }
 }
 async function loadMd(){
@@ -1760,6 +1871,7 @@ function asMsgEl(m, i){
   if (m.role === 'user'){
     const b = document.createElement('div'); b.className = 'asUser'; b.textContent = m.content;
     if (m.imgs && m.imgs.length) m.imgs.slice().reverse().forEach(src => { const im = document.createElement('img'); im.src = src; b.prepend(im); });
+    if (m.files && m.files.length){ const fc = document.createElement('div'); fc.className = 'asSrc'; m.files.forEach(n => { const sp = document.createElement('span'); sp.className = 'asFileChip'; sp.textContent = '📄 ' + n; fc.appendChild(sp); }); b.prepend(fc); }
     else if (m.hadImg){ const s = document.createElement('div'); s.className = 'hint'; s.textContent = '(画像つき)'; b.prepend(s); }
     d.appendChild(b);
   } else {
@@ -1827,6 +1939,67 @@ function asAddImage(file){
   };
   img.src = u;
 }
+
+/* ---- ファイルを読む(テキスト・PDF・Word・Excel・PowerPoint) ---- */
+let asFiles = [];
+const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|js|mjs|ts|tsx|jsx|py|html?|css|xml|ya?ml|toml|ini|cfg|log|sh|bat|ps1|c|cpp|h|hpp|cs|java|kt|go|rs|rb|php|sql|swift|dart|lua|r|m|tex|srt|vtt|ymmp)$/i;
+async function pdfText(file){
+  if (!window.pdfjsLib){ await loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.min.mjs'.replace('.mjs', '.js')).catch(() => {}); }
+  if (!window.pdfjsLib){ const mod = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.min.mjs'); window.pdfjsLib = mod; }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.worker.min.mjs';
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  let out = ''; const n = Math.min(pdf.numPages, 60);
+  for (let i = 1; i <= n; i++){ const pg = await pdf.getPage(i); const tc = await pg.getTextContent(); out += `\n--- ${i}ページ ---\n` + tc.items.map(x => x.str).join(' '); if (out.length > 120000) break; }
+  if (pdf.numPages > n) out += `\n(以降${pdf.numPages - n}ページは省略)`;
+  return out;
+}
+function xmlText(x){ return x.replace(/<\/w:p>|<\/a:p>|<\/text:p>/g, '\n').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#(\d+);/g, (m, d) => String.fromCharCode(d)); }
+async function officeText(file){
+  await l2dLibs(true);
+  const z = await JSZip.loadAsync(file); const names = Object.keys(z.files); let out = '';
+  if (names.includes('word/document.xml')) out = xmlText(await z.file('word/document.xml').async('string'));
+  else if (names.some(n => /^ppt\/slides\/slide\d+\.xml$/.test(n))){
+    const sl = names.filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => +a.match(/\d+/)[0] - +b.match(/\d+/)[0]);
+    for (const n of sl) out += `\n--- スライド${n.match(/\d+/)[0]} ---\n` + xmlText(await z.file(n).async('string'));
+  } else if (names.includes('xl/workbook.xml')){
+    let ss = []; if (z.file('xl/sharedStrings.xml')){ const x = await z.file('xl/sharedStrings.xml').async('string'); ss = [...x.matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => xmlText(m[1])); }
+    const sheets = names.filter(n => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort();
+    for (const n of sheets){
+      const x = await z.file(n).async('string'); out += `\n--- ${n.split('/').pop()} ---\n`;
+      for (const row of x.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)){
+        const cells = [...row[1].matchAll(/<c([^>]*)>([\s\S]*?)<\/c>/g)].map(c => { const v = (c[2].match(/<v>([\s\S]*?)<\/v>/) || [])[1]; const t = (c[1].match(/t="(\w+)"/) || [])[1]; if (t === 's') return ss[+v] || ''; if (t === 'inlineStr') return xmlText(c[2]); return v || ''; });
+        out += cells.join('\t') + '\n';
+      }
+    }
+  } else throw new Error('対応していないファイル');
+  return out;
+}
+async function readAnyFile(file){
+  const name = file.name;
+  if (/\.pdf$/i.test(name)) return pdfText(file);
+  if (/\.(docx|pptx|xlsx)$/i.test(name)) return officeText(file);
+  if (TEXT_EXT.test(name) || /^text\//.test(file.type) || file.size < 2e6) return file.text();
+  throw new Error('このファイルは読めない');
+}
+function asRenderFiles(){
+  const box = $('#asFilesBox'); if (!box) return; box.innerHTML = '';
+  asFiles.forEach((f, i) => {
+    const c = document.createElement('span'); c.className = 'asFileChip'; c.textContent = `📄 ${f.name} (${f.text ? Math.round(f.text.length / 1000) + 'k字' : '読み込み中'})`;
+    const x = document.createElement('button'); x.textContent = '×'; x.onclick = () => { asFiles.splice(i, 1); asRenderFiles(); };
+    c.appendChild(x); box.appendChild(c);
+  });
+}
+async function asAddFile(file){
+  if (!file) return;
+  if (/^image\//.test(file.type)) return asAddImage(file);
+  if (file.size > 50e6) return toast('50MBより大きいファイルは読めないよ');
+  const ent = { name: file.name, text: '' }; asFiles.push(ent); asRenderFiles();
+  try { ent.text = (await readAnyFile(file)).replace(/\r\n/g, '\n').trim().slice(0, 150000); if (!ent.text) ent.text = '(文字が入っていないファイル)'; }
+  catch(e){ asFiles.splice(asFiles.indexOf(ent), 1); toast(`${file.name} は読めなかった: ${e.message}`); }
+  asRenderFiles();
+}
+function filesPrompt(files){ return files.map(f => `【添付ファイル: ${f.name}】\n${f.text}\n【ここまで】`).join('\n\n'); }
+function userPayload(m){ return (m.fileText ? m.fileText + '\n\n' : '') + (m.aug || m.content); }
 
 /* ---- いまの情報を調べてから答える(天気・日時・最新の話題) ---- */
 const WMO = {0:'快晴',1:'晴れ',2:'晴れ時々くもり',3:'くもり',45:'霧',48:'霧',51:'弱い霧雨',53:'霧雨',55:'強い霧雨',56:'着氷性の霧雨',57:'着氷性の霧雨',61:'小雨',63:'雨',65:'大雨',66:'凍える雨',67:'凍える雨',71:'小雪',73:'雪',75:'大雪',77:'霧雪',80:'にわか雨',81:'にわか雨',82:'激しいにわか雨',85:'にわか雪',86:'激しいにわか雪',95:'雷雨',96:'ひょうを伴う雷雨',99:'ひょうを伴う雷雨'};
@@ -2045,7 +2218,7 @@ async function* asStream(chat, pick, web){
   if (pick.kind === 'claude'){
     asShowModel(CLAUDE_MODELS[pick.model] || pick.model); asNote('');
     asCtl = new AbortController();
-    const msgs = hist.map(m => { const o = { role: m.role, content: m.aug || m.content }; if (m.b64 && m.b64.length) o.images = m.b64; return o; });
+    const msgs = hist.map(m => { const o = { role: m.role, content: userPayload(m) }; if (m.b64 && m.b64.length) o.images = m.b64; return o; });
     const sys = asSystem() + (web ? ' 必要に応じてweb検索を使い、最新で正確な情報をもとに答える。使った情報源はわかるように書く。' : '');
     try {
       for await (const x of claudeStream({ system: sys, messages: msgs, model: pick.model, maxTokens: 4096, signal: asCtl.signal, web })) yield x.text != null ? x.text : x;
@@ -2055,7 +2228,7 @@ async function* asStream(chat, pick, web){
         asNote('このAPIキーではweb検索が使えないので、Wikipediaで調べて答えるね');
         const um = hist[hist.length - 1]; const src = await research(um.content, null, true);
         um.aug = sourcesPrompt(um.content, src); for (const x of src) yield { source: { title: x.title, url: x.url } };
-        const msgs2 = hist.map(m => ({ role: m.role, content: m.aug || m.content }));
+        const msgs2 = hist.map(m => ({ role: m.role, content: userPayload(m) }));
         for await (const x of claudeStream({ system: asSystem(), messages: msgs2, model: pick.model, maxTokens: 4096, signal: asCtl.signal })) if (x.text != null) yield x.text;
         return;
       }
@@ -2067,7 +2240,7 @@ async function* asStream(chat, pick, web){
     asShowModel(model + '(PC)');
     asNote(model !== S.smartModel && !/12b|4b|8b/.test(model) ? `かしこいAIがまだ入っていないので「${model}」で答えるね。PowerShellで ollama pull ${S.smartModel} を実行すると、もっとかしこくなるよ` : '');
     const msgs = [{ role: 'system', content: asSystem() }].concat(hist.map(m => {
-      const o = { role: m.role, content: m.aug || m.content }; if (m.b64 && m.b64.length) o.images = m.b64; return o;
+      const o = { role: m.role, content: userPayload(m) }; if (m.b64 && m.b64.length) o.images = m.b64; return o;
     }));
     asCtl = new AbortController();
     const res = await fetch(S.ollamaUrl.replace(/\/$/, '') + '/api/chat', { method: 'POST', signal: asCtl.signal,
@@ -2092,7 +2265,7 @@ async function* asStream(chat, pick, web){
   asShowModel('ブラウザの中のAI(簡易)');
   asNote('PCでOllamaを使うと、もっとかしこく速く答えられるよ');
   const eng = await ensureEngine();
-  const msgs = hist.slice(-4).map(m => ({ role: m.role, content: m.aug || m.content }));
+  const msgs = hist.slice(-4).map(m => ({ role: m.role, content: userPayload(m) }));
   while (msgs.length > 1 && msgs[0].role !== 'user') msgs.shift();
   msgs[0] = { role: 'user', content: asSystem() + '\n\n' + msgs[0].content };
   const req = { messages: msgs, stream: true, max_tokens: 1024, temperature: 0.6 };
@@ -2107,15 +2280,17 @@ async function* asStream(chat, pick, web){
 async function asSend(){
   if (asBusy){ asStop(); return; }
   const ta = $('#asInput'); const text = ta.value.trim();
-  if (!text && !asImages.length) return;
+  if (!text && !asImages.length && !asFiles.length) return;
+  if (asFiles.some(f => !f.text)) return toast('ファイルを読み込み中…少し待ってね');
   if (!asCur) asNew();
-  const m = { role: 'user', content: text || 'この画像について、わかることを教えて。' };
+  const m = { role: 'user', content: text || (asFiles.length ? 'このファイルの内容を要約して。' : 'この画像について、わかることを教えて。') };
   if (asImages.length){ m.imgs = asImages.map(x => x.url); m.b64 = asImages.map(x => x.b64); m.hadImg = true; }
+  if (asFiles.length){ m.files = asFiles.map(f => f.name); m.fileText = filesPrompt(asFiles); }
   const mode = S.asWeb || 'auto';
-  m.research = mode === 'on' || (mode === 'auto' && RESEARCH_RE.test(m.content) && !m.b64);
+  m.research = mode === 'on' || (mode === 'auto' && RESEARCH_RE.test(m.content) && !m.b64 && !m.fileText);
   asCur.msgs.push(m);
-  if (asCur.title === '新しい会話') asCur.title = m.content.replace(/\s+/g, ' ').slice(0, 24);
-  ta.value = ''; asAutoGrow(); asImages = []; asRenderImgs();
+  if (asCur.title === '新しい会話') asCur.title = (m.files ? m.files[0] + ' ' : '') + m.content.replace(/\s+/g, ' ').slice(0, 24);
+  ta.value = ''; asAutoGrow(); asImages = []; asRenderImgs(); asFiles = []; asRenderFiles();
   asSave(); asRender();
   await asGenerate();
 }
@@ -2210,14 +2385,15 @@ $('#asNewBtn').onclick = asNew;
 $('#asNew2').onclick = asNew;
 $('#asSendBtn').onclick = asSend;
 $('#asAttach').onclick = () => $('#asFile').click();
-$('#asFile').onchange = e => { [...e.target.files].forEach(asAddImage); e.target.value = ''; };
+$('#asFile').onchange = e => { [...e.target.files].forEach(asAddFile); e.target.value = ''; };
+['dragover', 'drop'].forEach(ev => $('#assist').addEventListener(ev, e => { e.preventDefault(); if (ev === 'drop') [...(e.dataTransfer.files || [])].forEach(asAddFile); }));
 $('#asInput').addEventListener('input', asAutoGrow);
 $('#asInput').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(pointer:fine)').matches){ e.preventDefault(); asSend(); }
 });
 $('#asInput').addEventListener('paste', e => {
-  const files = [...(e.clipboardData && e.clipboardData.files || [])].filter(f => /^image\//.test(f.type));
-  if (files.length){ e.preventDefault(); files.forEach(asAddImage); }
+  const files = [...(e.clipboardData && e.clipboardData.files || [])];
+  if (files.length){ e.preventDefault(); files.forEach(asAddFile); }
 });
 
 /* ============ 通話の開始・終了 ============ */
@@ -2287,7 +2463,7 @@ function sendText(){
 }
 
 /* ============ 設定画面 ============ */
-const FIELDS = ['aiEngine','claudeKey','claudeModel','claudeChatModel','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','homeCity','persona','voiceURI','cloverPitch','avatar','l2dScale','l2dY','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
+const FIELDS = ['aiEngine','claudeKey','claudeModel','claudeChatModel','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','homeCity','persona','voiceURI','cloverPitch','avatar','l2dPreset','l2dScale','l2dY','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
 function openSettings(){
   for (const k of FIELDS){
     const el = $('#s_' + k); if (!el) continue;
