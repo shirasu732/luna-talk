@@ -530,6 +530,7 @@ body.l2d #char{display:none}
     <div class="hint">スピーカーだとAIの声を拾って勝手に止まることがあります。そのときはこの値を上げるか、イヤホンを使ってください。</div>
     <label><input id="s_aizuchi" type="checkbox"> 話の途中で相づちを打つ</label>
     <label><input id="s_speculative" type="checkbox"> 話し終わる前から返事を準備する(速くなる)</label>
+    <label><input id="s_hardToClaude" type="checkbox"> むずかしい質問だけClaudeに答えてもらう(APIキーがあるとき)</label>
     <label><input id="s_localStt" type="checkbox"> 音声認識も端末の中で行う(対応しているAndroidのChromeのみ)</label>
     <label><input id="s_search" type="checkbox"> 「〜って何？」などはWikipediaで調べる</label>
     <button class="bigbtn" id="mc_open2" style="width:100%;margin-top:16px">🎤 マイクの確認</button>
@@ -619,7 +620,7 @@ const DEFAULTS = {
   model: 'auto', userName: '', setupDone: false,
   name: 'Luna', persona: DEFAULT_PERSONA, voiceURI: '',
   rate: 1.1, pitch: 1.35, endMs: 500, sens: 2.8, barge: 2.6,
-  aiEngine: 'auto', ollamaModel: 'gemma3:1b', smartModel: 'gemma3:4b', ollamaUrl: 'http://localhost:11434',
+  aiEngine: 'auto', ollamaModel: 'gemma3:4b', smartModel: 'gemma3:4b', hardToClaude: true, ollamaUrl: 'http://localhost:11434',
   voiceEngine: 'clover', cloverPitch: 0, cloverGpu: false, homeCity: '', claudeKey: '', claudeModel: 'claude-sonnet-5-5', claudeChatModel: 'claude-haiku-5-5', asEngine: 'auto', avatar: 'live2d', l2dPreset: 'hiyori', l2dScale: 1.7, l2dY: 0, aizuchi: true, speculative: true, localStt: false, search: true
 };
 const STORE_KEY = 'hiyori-local-settings';
@@ -630,7 +631,11 @@ if (S.persona === OLD_PERSONA) S.persona = DEFAULT_PERSONA;
 if (!S.voiceV2){ S.pitch = Math.max(S.pitch, 1.35); S.voiceV2 = true; }
 if (/^あなたは「ひより」/.test(S.persona)) S.persona = DEFAULT_PERSONA;
 function loadSettings(){
-  try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); }
+  try {
+    const o = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(STORE_KEY) || '{}'));
+    if (o.ollamaModel === 'gemma3:1b' && !o._v4b){ o.ollamaModel = 'gemma3:4b'; o._v4b = true; }   // 2026-11: 会話も4bに
+    return o;
+  }
   catch(e){ return Object.assign({}, DEFAULTS); }
 }
 function saveSettings(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(S)); }catch(e){} }
@@ -790,6 +795,11 @@ async function detectOllama(quiet){
     const names = ((await r.json()).models || []).map(m => m.name);
     const want = S.ollamaModel.includes(':') ? S.ollamaModel : S.ollamaModel + ':latest';
     ollamaOK = names.includes(want) || names.includes(S.ollamaModel);
+    if (!ollamaOK && names.length){
+      // 指定モデルが無ければ、入っている中でいちばん良さそうなものを使う(4b > 1b)
+      const pick = names.find(n => /gemma3:4b|qwen3:4b/.test(n)) || names.find(n => /gemma3|qwen3|llama/.test(n)) || names[0];
+      if (pick){ S.ollamaModel = pick; ollamaOK = true; if (!quiet) toast(`Ollamaの「${pick}」で話すね`); }
+    }
     if (!ollamaOK && !quiet) toast(`Ollamaに「${S.ollamaModel}」が入っていないよ。PowerShellで ollama pull ${S.ollamaModel} を実行してね`);
   } catch(e){
     ollamaOK = false;
@@ -1341,7 +1351,9 @@ function startGen(userText, committed, memo){
 async function runGen(g, msgs){
   if (g.cancelled) return;
   try {
-    const useClaude = S.aiEngine === 'claude' && claudeReady();
+    const hard = g.userText != null && isHardQ(g.userText);
+    const useClaude = claudeReady() && (S.aiEngine === 'claude' || (S.aiEngine !== 'browser' && S.hardToClaude && hard));
+    if (useClaude && hard && S.aiEngine !== 'claude') console.log('hard question → Claude');
     if (S.aiEngine === 'claude' && !claudeReady()) toast('ClaudeのAPIキーが入っていないので、ほかのAIで話すね');
     if (!useClaude && ollamaOK === null) await detectOllama(true);
     const eng = (useClaude || ollamaOK) ? null : await ensureEngine();
@@ -1424,6 +1436,13 @@ function onTtsDrained(){
   }
 }
 const TASK_RE = /(作って|つくって|書いて|かいて|まとめて|調べて|しらべて|検索して|ググって|考えて|かんがえて|作成して|翻訳して|訳して|リストにして|計画を立てて|プランを立てて|レシピを教えて|コードを|プログラムを|メールを|文章を|比べて|くらべて)/;
+const HARD_RE = /(なぜ|なんで|どうして|どうやって|やり方|方法|違い|とは|って何|ってなに|教えて|おしえて|説明|おすすめ|オススメ|比べ|くらべ|どっち|どちら|何年|いつ|誰|だれ|どこ|いくら|計算|英語で|翻訳|意味|理由|仕組み|しくみ|メリット|デメリット|正しい|本当|ほんと|歴史|由来|原因|対策|コツ|どう思う|どうすれば|したらいい|すればいい|手順|ルール|何個|何人|何回|どれくらい|どのくらい|高さ|長さ|広さ|深さ|重さ|人口|首都|面積|距離|速さ|値段|価格|定義|公式|漢字|読み方|作り方|使い方|書き方|直し方|選び方|作者|監督|発売|誕生|最新|ニュース|天気|何語|語で|とは何|って誰|ってどこ|ってどんな|何に|何の)/;
+function isHardQ(text){
+  const t = text.replace(/\s/g, '');
+  if (t.length < 6) return false;
+  if (HARD_RE.test(t)) return true;
+  return /[？?]$/.test(t) && t.length >= 14;
+}
 function detectTask(text){
   const t = text.replace(/\s/g, '');
   if (t.length < 6 || !TASK_RE.test(t)) return false;
@@ -2508,7 +2527,7 @@ function sendText(){
 }
 
 /* ============ 設定画面 ============ */
-const FIELDS = ['aiEngine','claudeKey','claudeModel','claudeChatModel','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','homeCity','persona','voiceURI','cloverPitch','cloverGpu','avatar','l2dPreset','l2dScale','l2dY','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search'];
+const FIELDS = ['aiEngine','claudeKey','claudeModel','claudeChatModel','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','homeCity','persona','voiceURI','cloverPitch','cloverGpu','avatar','l2dPreset','l2dScale','l2dY','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search','hardToClaude'];
 function openSettings(){
   for (const k of FIELDS){
     const el = $('#s_' + k); if (!el) continue;
