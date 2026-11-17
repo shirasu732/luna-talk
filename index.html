@@ -6,8 +6,13 @@
 <meta name="theme-color" content="#f6eeff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="AIとおはなし">
-<title>AIとおはなし</title>
+<meta name="apple-mobile-web-app-title" content="Luna">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="description" content="声でおしゃべりできるAI「Luna」。スマホでもPCでも、アプリとして使えます。">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<title>Lunaとおはなし</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.11.1/styles/atom-one-dark.min.css">
 <script type="importmap">{"imports":{"piper-plus":"https://unpkg.com/piper-plus@0.8.2/src/index.js","@piper-plus/g2p":"https://cdn.jsdelivr.net/npm/@piper-plus/g2p@0.4.2/src/index.js","onnxruntime-web":"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.min.mjs"}}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -274,6 +279,7 @@ body.l2d #char{display:none}
     <button class="round" id="assistBtn" aria-label="アシスタント(作る・質問する)">✨</button>
     <button class="round" id="micBtn" aria-label="マイクの確認">🎤</button>
     <button class="round" id="logBtn" aria-label="会話の記録">💬</button>
+    <button class="round" id="installBtn" aria-label="アプリとして入れる" style="display:none">📲</button>
     <button class="round" id="gear" aria-label="設定">⚙</button>
   </div>
 </header>
@@ -533,6 +539,8 @@ body.l2d #char{display:none}
     <label><input id="s_hardToClaude" type="checkbox"> むずかしい質問だけClaudeに答えてもらう(APIキーがあるとき)</label>
     <label><input id="s_localStt" type="checkbox"> 音声認識も端末の中で行う(対応しているAndroidのChromeのみ)</label>
     <label><input id="s_search" type="checkbox"> 「〜って何？」などはWikipediaで調べる</label>
+    <button class="bigbtn" id="installBtn2" style="width:100%;margin-top:16px">📲 アプリとしてホーム画面に入れる</button>
+    <div class="hint" id="installHint"></div>
     <button class="bigbtn" id="mc_open2" style="width:100%;margin-top:16px">🎤 マイクの確認</button>
     <div class="btns"><button id="closeBtn">閉じる</button><button id="saveBtn">保存</button></div>
     <button id="resetBtn">会話の記録を消す</button>
@@ -2588,6 +2596,37 @@ $('#drawerClose').onclick = () => $('#drawer').classList.remove('open');
 
 $('#gear').onclick = openSettings;
 $('#closeBtn').onclick = () => $('#settings').classList.remove('open');
+// ===== アプリ化(PWA) =====
+let installEvt = null;
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function updateInstallUI(){
+  const b1 = $('#installBtn'), b2 = $('#installBtn2'), h = $('#installHint');
+  if (isStandalone()) { b1.style.display = 'none'; b2.style.display = 'none'; h.textContent = 'アプリとして起動中です。'; return; }
+  b1.style.display = installEvt ? '' : 'none';
+  b2.style.display = '';
+  h.textContent = installEvt ? '' : isIOS
+    ? 'iPhoneは、Safariの共有ボタン(□↑)→「ホーム画面に追加」で入れられます。'
+    : 'ボタンが効かないときは、ブラウザのメニュー(︙)→「アプリをインストール」または「ホーム画面に追加」を選んでください。';
+}
+async function doInstall(){
+  if (installEvt) { installEvt.prompt(); const r = await installEvt.userChoice; installEvt = null; if (r.outcome === 'accepted') toast('アプリとして入れました'); updateInstallUI(); }
+  else { $('#settings').classList.add('open'); updateInstallUI(); toast($('#installHint').textContent || 'ブラウザのメニューから入れられます'); }
+}
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; updateInstallUI(); });
+addEventListener('appinstalled', () => { installEvt = null; updateInstallUI(); });
+$('#installBtn').onclick = doInstall;
+$('#installBtn2').onclick = doInstall;
+updateInstallUI();
+if ('serviceWorker' in navigator && isSecureContext && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      w && w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) toast('新しいバージョンがあります。開き直すと反映されます'); });
+    });
+  }).catch(() => {});
+}
+
 $('#saveBtn').onclick = saveFromForm;
 $('#resetBtn').onclick = () => { history = []; saveHistory(); logEl.innerHTML = ''; toast('履歴を消したよ'); };
 ['rate','pitch','endMs','sens','barge','cloverPitch','l2dScale','l2dY'].forEach(k => $('#s_' + k).addEventListener('input', updateVals));
