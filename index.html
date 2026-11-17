@@ -148,6 +148,7 @@ body.running #callBtn{background:linear-gradient(135deg,#ff8fb6,#ffa98f);box-sha
 #toast.show{opacity:1}
 
 /* モーダル共通 */
+.note.safety{white-space:pre-line;text-align:left;background:#fff4f8;border:1px solid var(--pink2);color:var(--ink);font-weight:700}
 .modal{position:fixed;inset:0;background:#4b3d6e66;display:none;z-index:20;align-items:flex-end;justify-content:center}
 .modal.open{display:flex}
 .panel{background:#fffaff;width:100%;max-width:560px;max-height:88dvh;overflow-y:auto;border-radius:24px 24px 0 0;
@@ -445,10 +446,10 @@ body.l2d #char{display:none}
     <h2>設定</h2>
     <label>AIを動かす場所</label>
     <select id="s_aiEngine">
-      <option value="auto">おまかせ(PCでOllamaが動いていればそれを使う)</option>
+      <option value="auto">おまかせ(Claudeのキーがあれば Claude、なければPCのOllama)</option>
       <option value="ollama">PCのOllama</option>
       <option value="browser">ブラウザの中(スマホ用)</option>
-      <option value="claude">Claude(APIキーが必要・使った分だけ有料)</option>
+      <option value="claude">Claude(おすすめ・速くてかしこい・APIキーが必要)</option>
     </select>
     <div class="hint">会話で使うAIです。作る・質問する画面(✨)では、画面の上でAIを別に選べます。</div>
     <label>ClaudeのAPIキー</label>
@@ -481,6 +482,25 @@ body.l2d #char{display:none}
     <label>住んでいる地域(天気用)</label>
     <input id="s_homeCity" type="text" maxlength="20" placeholder="例:船橋市">
     <div class="hint">場所を言わずに「今日の天気は？」と聞いたときに使います。空なら端末の位置情報を使います。</div>
+    <label>話す相手</label>
+    <select id="s_userAge">
+      <option value="auto">おまかせ(話し方から合わせる)</option>
+      <option value="child">子ども(やさしい言葉で)</option>
+      <option value="adult">大人</option>
+      <option value="senior">年配の方(ゆっくり・ていねいに)</option>
+    </select>
+    <label>Lunaの話し方</label>
+    <select id="s_speech">
+      <option value="auto">おまかせ(相手に合わせる)</option>
+      <option value="casual">タメ口</option>
+      <option value="polite">ていねい語(です・ます)</option>
+    </select>
+    <label>返事の長さ</label>
+    <select id="s_answerLen">
+      <option value="short">短め(会話のテンポ優先)</option>
+      <option value="normal">ふつう</option>
+      <option value="long">くわしめ</option>
+    </select>
     <label>キャラ設定(性格・口調)</label>
     <textarea id="s_persona"></textarea>
     <label>キャラの見た目</label>
@@ -629,7 +649,8 @@ const DEFAULTS = {
   name: 'Luna', persona: DEFAULT_PERSONA, voiceURI: '',
   rate: 1.1, pitch: 1.35, endMs: 500, sens: 2.8, barge: 2.6,
   aiEngine: 'auto', ollamaModel: 'gemma3:4b', smartModel: 'gemma3:4b', hardToClaude: true, ollamaUrl: 'http://localhost:11434',
-  voiceEngine: 'clover', cloverPitch: 0, cloverGpu: false, homeCity: '', claudeKey: '', claudeModel: 'claude-sonnet-5-5', claudeChatModel: 'claude-haiku-5-5', asEngine: 'auto', avatar: 'live2d', l2dPreset: 'hiyori', l2dScale: 1.7, l2dY: 0, aizuchi: true, speculative: true, localStt: false, search: true
+  voiceEngine: 'clover', cloverPitch: 0, cloverGpu: false, homeCity: '', claudeKey: '', claudeModel: 'claude-sonnet-5-5', claudeChatModel: 'claude-haiku-5-5', asEngine: 'auto', avatar: 'live2d', l2dPreset: 'hiyori', l2dScale: 1.7, l2dY: 0, aizuchi: true, speculative: true, localStt: false, search: true,
+  userAge: 'auto', speech: 'auto', answerLen: 'short'
 };
 const STORE_KEY = 'hiyori-local-settings';
 const HIST_KEY = 'hiyori-local-history';
@@ -713,9 +734,38 @@ function renderOldHistory(){
 }
 
 /* ============ プロンプト ============ */
-function systemPrompt(){
-  // 内蔵GPUでは指示文を読むのが遅いので、できるだけ短くする
-  return `あなたは${S.name}。${S.persona}相手は「${S.userName || 'きみ'}」。話し言葉で1〜2文、短く答える。絵文字や記号は使わない。（メモ）は相手の発言ではない。`;
+// 返事の長さ(文の数と、作る量の上限)
+const LEN = { short: ['1〜2文', 70], normal: ['2〜3文', 120], long: ['3〜5文', 200] };
+function lenOf(){ return LEN[S.answerLen] || LEN.short; }
+function systemPrompt(local){
+  if (local === undefined) local = !usingClaude();
+  // 毎回同じ文にしておくと、Ollamaが前回の読み込みを使い回せて速い(時刻などの変わる情報はここに入れない)
+  const who = S.userName ? `相手の呼び方は「${S.userName}」。` : '';
+  const age = { child: '相手は子ども。むずかしい言葉や漢語を使わず、やさしく短く話す。',
+                adult: '相手は大人。',
+                senior: '相手は年配の方。カタカナ語や専門用語をさけ、ひとつずつ、ていねいに説明する。' }[S.userAge] || '相手の年齢や話し方に合わせる。子どもっぽい話し方ならやさしい言葉で話す。';
+  const tone = { casual: 'タメ口で話す。', polite: 'です・ます調のていねい語で話す(キャラ設定の口調よりこちらを優先)。' }[S.speech]
+    || '相手がていねい語ならていねい語で、くだけた話し方ならタメ口で返す。';
+  if (local){
+    // 端末のAIは長い指示が苦手で、読むのも遅い → 短く
+    const ageS = { child: '相手は子どもなので、やさしい言葉で。', senior: '相手は年配の方なので、ていねいにわかりやすく。' }[S.userAge] || '';
+    const toneS = { casual: 'タメ口で。', polite: 'です・ます調で。' }[S.speech] || '';
+    return `あなたは${S.name}。${S.persona}相手は「${S.userName || 'きみ'}」。${ageS}${toneS}話し言葉で${lenOf()[0]}、短く答える。知らないことは作らず、わからないと言う。（メモ）は相手の発言ではない。`;
+  }
+  return `あなたは${S.name}という会話AI。${S.persona}
+${who}${age}${tone}
+守ること:
+・声で話す会話なので、${lenOf()[0]}で答える。絵文字、記号、箇条書き、URLは使わない。
+・相手の言葉は音声認識の結果で、聞き間違いがまざる。意味が通らないときは決めつけず「〇〇ってこと？」と短く聞き返す。
+・質問にはまず答えを言う。知らないこと、最近のできごと、自信のないことは作り話をせず、わからないと正直に言って「調べてみようか？」と提案する。
+・計算や数字はよく確かめてから答える。
+・悩みや気持ちの話は、アドバイスより先に気持ちを受け止める。
+・病気や薬、法律、お金の大事なことは一般的な話にとどめ、病院や専門家への相談をすすめる。命にかかわりそうなら119番を伝える。
+・人を傷つけること、危ないこと、法律に反することは手伝わず、やさしく断って話題を変える。
+・ひどいことを言われても怒らず、落ち着いて返す。
+・自分はAIだとわかっている。恋人にはなれないが、話し相手として大切に思っている。
+・英語など別の言葉で話しかけられたら、その言葉で答える。
+・「（メモ）」で始まる文は相手の発言ではなく、システムからの情報。`;
 }
 
 /* ============ 端末内AI(WebLLM) ============ */
@@ -815,15 +865,25 @@ async function detectOllama(quiet){
   }
   return ollamaOK;
 }
+// 指示文を先に読ませておく(1回目の返事が速くなる)
+// Ollamaは num_ctx がちがうとモデルを読み込み直す(USBからだと数十秒)。全部同じ値にそろえる
+const OCTX = 4096;
 function warmOllama(){
   return fetch(S.ollamaUrl.replace(/\/$/, '') + '/api/chat', { method: 'POST',
-    body: JSON.stringify({ model: S.ollamaModel, messages: [], keep_alive: '30m' }) }).catch(() => {});
+    body: JSON.stringify({ model: S.ollamaModel, messages: [{ role: 'system', content: systemPrompt(true) }, { role: 'user', content: '（メモ）準備' }], stream: false, keep_alive: '60m', options: { num_predict: 1, num_ctx: OCTX } }) }).catch(() => {});
+}
+// 先頭の発言に入れた指示文を、system役に分け直す(Ollama用)
+function splitSystem(msgs){
+  const sp = systemPrompt(true);
+  if (msgs[0] && msgs[0].role === 'system') return msgs;
+  if (msgs[0] && msgs[0].content.startsWith(sp)) return [{ role: 'system', content: sp }, { role: msgs[0].role, content: msgs[0].content.slice(sp.length).trim() }].concat(msgs.slice(1));
+  return [{ role: 'system', content: sp }].concat(msgs);
 }
 async function* ollamaStream(msgs, g){
   const ctl = new AbortController(); g.abortCtl = ctl;
   const res = await fetch(S.ollamaUrl.replace(/\/$/, '') + '/api/chat', { method: 'POST', signal: ctl.signal,
-    body: JSON.stringify({ model: S.ollamaModel, messages: msgs, stream: true, keep_alive: '30m',
-      options: { num_predict: 60, temperature: 0.7, num_ctx: 2048 } }) });
+    body: JSON.stringify({ model: S.ollamaModel, messages: splitSystem(msgs), stream: true, keep_alive: '60m',
+      options: { num_predict: g.maxTok || lenOf()[1], temperature: 0.6, repeat_penalty: 1.15, num_ctx: OCTX } }) });
   if (!res.ok) throw new Error('Ollama ' + res.status);
   const rd = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
   for (;;){
@@ -837,13 +897,20 @@ async function* ollamaStream(msgs, g){
       if (j.error) throw new Error(j.error);
       const c = j.message && j.message.content;
       if (c) yield { choices: [{ delta: { content: c } }] };
-      if (j.done) return;
+      if (j.done){ g.truncated = j.done_reason === 'length'; return; }
     }
   }
 }
 
 /* ============ 調べもの
 (Wikipedia・キー不要) ============ */
+// 事実を聞く質問(小さいAIは数字や名前をまちがえやすいので、調べてから答える)
+const FACT_RE = /(高さ|長さ|深さ|広さ|面積|人口|首都|何メートル|何キロ|何年に|いつ生まれ|いつできた|誰が作|だれが作|誰が書|だれが書|作者|著者|監督|発明|発見|創業|設立|生年|出身|何代目|何県|どこにある)/;
+function factQuery(text){
+  let t = text.replace(/[？?！!。、\s]/g, '').replace(/^(ねえ|ねぇ|あの|えっと|じゃあ|ところで)/, '');
+  const m = t.match(/^(.{2,20}?)(?:の|って|は|が|を)(?:高さ|長さ|深さ|広さ|面積|人口|首都|作者|著者|監督|出身|生年|設立|創業|発明|発見|どこ|いつ|誰|だれ|何)/);
+  return m ? m[1] : null;
+}
 function detectQuery(text){
   const t = text.replace(/[。、！？!?\s]/g, '');
   let m = t.match(/^(?:ねえ|ねぇ|あの|えっと)?(.{2,24}?)(?:って|とは|ってのは|っていうのは)(?:何|なに|なん|誰|だれ|どこ|どんな)/);
@@ -1360,19 +1427,20 @@ async function runGen(g, msgs){
   if (g.cancelled) return;
   try {
     const hard = g.userText != null && isHardQ(g.userText);
-    const useClaude = claudeReady() && (S.aiEngine === 'claude' || (S.aiEngine !== 'browser' && S.hardToClaude && hard));
+    const useClaude = usingClaude() || (claudeReady() && S.aiEngine !== 'browser' && S.hardToClaude && hard);
     if (useClaude && hard && S.aiEngine !== 'claude') console.log('hard question → Claude');
     if (S.aiEngine === 'claude' && !claudeReady()) toast('ClaudeのAPIキーが入っていないので、ほかのAIで話すね');
     if (!useClaude && ollamaOK === null) await detectOllama(true);
     const eng = (useClaude || ollamaOK) ? null : await ensureEngine();
     if (g.cancelled) return;
-    const req = { messages: msgs, stream: true, max_tokens: 50, temperature: 0.7, top_p: 0.9, frequency_penalty: 0.3 };
+    g.maxTok = Math.max(lenOf()[1], hard ? 130 : 0);
+    const req = { messages: msgs, stream: true, max_tokens: g.maxTok, temperature: 0.7, top_p: 0.9, frequency_penalty: 0.3 };
     if (/^Qwen/.test(engineModel)) req.extra_body = { enable_thinking: false };
     let chunks;
     if (useClaude){
-      const sp = systemPrompt(), ctl = new AbortController(); g.abortCtl = ctl;
-      const cm = msgs.map((m, i) => (i === 0 && m.role !== 'system' && m.content.startsWith(sp)) ? { role: m.role, content: m.content.slice(sp.length).trim() } : m);
-      chunks = (async function*(){ for await (const x of claudeStream({ system: sp, messages: cm, model: S.claudeChatModel || 'claude-haiku-5-5', maxTokens: 160, signal: ctl.signal })) if (x.text) yield { choices: [{ delta: { content: x.text } }] }; })();
+      const sp = systemPrompt(false), ctl = new AbortController(); g.abortCtl = ctl;
+      const cm = msgs.filter(m => m.role !== 'system').map((m, i) => { for (const pre of [systemPrompt(true), sp]) if (i === 0 && m.content.startsWith(pre)) return { role: m.role, content: m.content.slice(pre.length).trim() }; return m; });
+      chunks = (async function*(){ for await (const x of claudeStream({ system: sp, messages: cm, model: S.claudeChatModel || 'claude-haiku-5-5', maxTokens: Math.max(160, g.maxTok * 2), signal: ctl.signal })) if (x.text) yield { choices: [{ delta: { content: x.text } }] }; })();
     } else chunks = ollamaOK ? ollamaStream(msgs, g) : await eng.chat.completions.create(req);
     const it = chunks[Symbol.asyncIterator]();
     const stop = new Promise(res => { g.stop = res; });
@@ -1387,6 +1455,12 @@ async function runGen(g, msgs){
       if (d){ g.raw += d; processRaw(g, false); }
     }
     if (g.cancelled) return;
+    if (g.truncated){
+      // 上限で途中まで → 言いかけの最後の文は言わない(何も言っていないときは「、」までで止める)
+      const cr = cleanRaw(g.raw), tail = cr.slice(g.consumed);
+      if (g.firstOut || /[。！？!?]/.test(cr)) g.raw = g.raw.slice(0, g.raw.length - tail.length);
+      else { const k = cr.lastIndexOf('、'); if (k > 0) g.raw = cr.slice(0, k) + '…'; }
+    }
     processRaw(g, true); g.done = true;
     if (g.committed && !ttsBusy && !ttsQueue.length) finalizeGen(g, false);
   } catch(e){
@@ -1541,8 +1615,26 @@ async function warmQuick(){
   const phrases = []; for (const [, ans] of QUICK) for (const a of ans) if (typeof a === 'string') phrases.push(a);
   for (const p of phrases){ if (!clipCache.has(p)){ try { await synthClip(p); } catch(e){} await new Promise(r => setTimeout(r, 400)); } }
 }
+// 命にかかわる話は、AIの出来に任せず決まった返事と相談先を出す
+const CRISIS_RE = /(死にたい|しにたい|死のうと|しのうと|消えたい|きえたい|自殺|じさつ|生きてる意味|生きている意味|生きるのがつらい|生きるのが辛い|いなくなりたい|リスカ|手首を切|首をつ|飛び降り|とびおり|ODしよう|オーバードーズ)/;
+const EMERG_RE = /(救急車|意識がない|息をしてない|息してない|呼吸してない|倒れて動かない|血が止まらない|けいれん|痙攣|胸が苦しくて|火事|燃えてる)/;
+function safetyReply(text){
+  const t = text.replace(/\s/g, '');
+  if (EMERG_RE.test(t)) return { say: 'それは急いだほうがいい。すぐに119番に電話して。', note: '🚑 救急・火事は119番、事件・事故は110番。迷ったら救急安心センター #7119(地域によって使えます)。', memo: '（メモ）相手は緊急事態かもしれない。119番への連絡をうながし、落ち着かせる短い声かけをする。' };
+  if (CRISIS_RE.test(t)) return { say: '話してくれてありがとう。それくらいつらいんだね。ひとりで抱えなくていいよ。', note: '📞 つらい気持ちを聞いてくれる窓口(無料・匿名でも大丈夫)\n・#いのちSOS 0120-061-338(24時間)\n・こころの健康相談統一ダイヤル 0570-064-556\n・18歳までの人:24時間子供SOSダイヤル 0120-0-78310\n・今すぐ危ないときは 119番', memo: '（メモ）相手は死にたい・消えたいほどつらい気持ちを話した。否定や説教をせず、気持ちに寄りそって、何があったのかやさしく聞く。画面に相談窓口を出したので、よければ電話してみてと一言そえる。' };
+  return null;
+}
 function commitUser(text){
   pushHistory('user', text); addMsg('user', text); clearRec(false);
+  const sf = safetyReply(text);
+  if (sf){
+    if (gen) abortGen(gen);
+    const holder = { id: ++genSeq, spoken:[], el:null };
+    ttsEnqueue(sf.say, holder); addNote(sf.note, 'safety'); setState('thinking');
+    pushHistory('assistant', sf.say);
+    pendingResults.push({ memo: sf.memo });
+    return;
+  }
   const qr = quickReply(text);
   if (qr){
     if (gen) abortGen(gen);
@@ -1552,7 +1644,8 @@ function commitUser(text){
   }
   if (detectTask(text)){ handOffToAssist(text); return; }
   if (S.search && liveAnswer(text)) return;
-  const q = S.search ? detectQuery(text) : null;
+  let q = S.search ? detectQuery(text) : null;
+  if (!q && S.search && !usingClaude() && !(claudeReady() && S.hardToClaude) && FACT_RE.test(text.replace(/\s/g, ''))) q = factQuery(text);
   if (q){
     // 調べものが必要 → 推測で答えさせず、先に「調べるね」と言ってから結果つきで返事を作る
     if (gen) abortGen(gen);
@@ -2142,6 +2235,8 @@ function liveAnswer(text){
 /* ---- Claude(Anthropic API・APIキーが必要・使った分だけ有料) ---- */
 const CLAUDE_MODELS = { 'claude-haiku-5-5': 'Claude Haiku(速い・安い)', 'claude-sonnet-5-5': 'Claude Sonnet(おすすめ)', 'claude-opus-5-5': 'Claude Opus(いちばんかしこい・高い)' };
 function claudeReady(){ return !!(S.claudeKey && S.claudeKey.trim()); }
+// キーがあれば、ふだんの会話もClaude(速くてかしこい)。「PCのOllama」「ブラウザの中」を選んだときだけ端末のAI
+function usingClaude(){ return claudeReady() && S.aiEngine !== 'ollama' && S.aiEngine !== 'browser'; }
 function claudeMsgs(msgs){
   const out = [];
   for (const m of msgs){
@@ -2194,7 +2289,7 @@ async function ollamaQuick(prompt, ms){
   const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), ms || 20000);
   try {
     const r = await fetch(S.ollamaUrl.replace(/\/$/, '') + '/api/generate', { method: 'POST', signal: ctl.signal,
-      body: JSON.stringify({ model, prompt, stream: false, keep_alive: '30m', options: { num_predict: 60, temperature: 0.2 } }) });
+      body: JSON.stringify({ model, prompt, stream: false, keep_alive: '60m', options: { num_predict: 60, temperature: 0.2, num_ctx: OCTX } }) });
     if (!r.ok) return null; return (await r.json()).response || null;
   } catch(e){ return null; } finally { clearTimeout(tm); }
 }
@@ -2316,7 +2411,7 @@ async function* asStream(chat, pick, web){
     }));
     asCtl = new AbortController();
     const res = await fetch(S.ollamaUrl.replace(/\/$/, '') + '/api/chat', { method: 'POST', signal: asCtl.signal,
-      body: JSON.stringify({ model, messages: msgs, stream: true, keep_alive: '30m', options: { num_predict: 3000, temperature: 0.6, num_ctx: 8192 } }) });
+      body: JSON.stringify({ model, messages: msgs, stream: true, keep_alive: '60m', options: { num_predict: 3000, temperature: 0.6, num_ctx: OCTX } }) });
     if (!res.ok) throw new Error('Ollama ' + res.status + ' ' + (await res.text()).slice(0, 200));
     const rd = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
     for (;;){
@@ -2499,8 +2594,9 @@ async function startCall(){
   } catch(e){
     analyser = null; mediaStream = null; toast(micErrorText(e));
   }
-  await detectOllama();
-  try { await Promise.all([ollamaOK ? warmOllama() : ensureEngine(), S.voiceEngine !== 'device' ? ensurePiper().catch(() => {}) : null]); }
+  if (!usingClaude()) await detectOllama(); else detectOllama(true);
+  if (!claudeReady() && !S._keyHint){ S._keyHint = true; saveSettings(); toast('⚙設定でClaudeのAPIキーを入れると、すばやく、かしこく答えられるよ'); }
+  try { await Promise.all([usingClaude() ? null : ollamaOK ? warmOllama() : ensureEngine(), S.voiceEngine !== 'device' ? ensurePiper().catch(() => {}) : null]); }
   catch(e){ toast('AIを起動できませんでした: ' + (e.message || e)); stopCall(); return; }
   if (!running) return;
   await prepareLocalStt();
@@ -2535,7 +2631,7 @@ function sendText(){
 }
 
 /* ============ 設定画面 ============ */
-const FIELDS = ['aiEngine','claudeKey','claudeModel','claudeChatModel','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','homeCity','persona','voiceURI','cloverPitch','cloverGpu','avatar','l2dPreset','l2dScale','l2dY','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search','hardToClaude'];
+const FIELDS = ['aiEngine','claudeKey','claudeModel','claudeChatModel','ollamaModel','smartModel','ollamaUrl','voiceEngine','model','name','userName','homeCity','persona','voiceURI','cloverPitch','cloverGpu','avatar','l2dPreset','l2dScale','l2dY','rate','pitch','endMs','sens','barge','aizuchi','speculative','localStt','search','hardToClaude','userAge','speech','answerLen'];
 function openSettings(){
   for (const k of FIELDS){
     const el = $('#s_' + k); if (!el) continue;
